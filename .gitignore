@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+out/*.npz
+out/events.csv
+*.log
+.DS_Store
