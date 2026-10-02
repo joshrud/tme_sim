@@ -81,6 +81,29 @@ python run_spheroid.py 700     # grow to 700 um (writes out/)
 python analyze.py              # compare to HeLa-Fucci spheroid
 ```
 
+## 4D viewer (three.js)
+```bash
+python export_viewer.py                          # out/snapshots.npz -> viewer/data/frames.bin.gz
+python -m http.server 8765 --directory viewer    # then open http://localhost:8765
+```
+- Play/scrub through time. Cells are matched by id and interpolated between 12 h snapshots. The speed slider is
+  log-scale, from 3 min/s (slow enough to watch mitosis) to 48 h/s.
+- **Mitosis** at the true division time from the event log, using HeLa sub-stage timings (Chakraborty et al. 2008):
+  - the mother turns **yellow** 65 min before cytokinesis (nuclear envelope breakdown);
+  - in the last 10 min (anaphase → cytokinesis) the daughter emerges from the mother and the two lobes separate, both yellow;
+  - both become G1 (red) once cytokinesis completes.
+- **Lineage**: color by founding clone, or click any cell to see its ancestry (seeded founder → … → cell, with
+  birth times) and the live size of its clone. "Highlight clone" isolates that clone in 3D.
+- **Cell opacity** slider: lower it to see the interior through the outer cells.
+- Color by cell-cycle phase (Fucci-style) or by pO2.
+- **Cross-section** inset (top right): transverse / coronal / sagittal, with a slider through the spheroid.
+  The plane is shown in the 3D view, and each cell is drawn as its true circle of intersection.
+- **Record video**: plays from the start and saves the 3D view, the inset and a time label as WebM (MP4 on Safari).
+
+## Parked ideas
+- **Two-agent system (body vs. tumor)**: revisit once immune/stromal cell types exist.
+- **Resumable, compressed states**: an entity–component format with per-component precision, plus keyframes and deltas.
+
 ## Files
 - `tme/params.py` — every parameter with its source
 - `tme/world.py` — the world: cells, contact graph, fields, cycle, events
