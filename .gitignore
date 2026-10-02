@@ -4,3 +4,4 @@ out/*.npz
 out/events.csv
 *.log
 .DS_Store
+viewer/data/

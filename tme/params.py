@@ -32,6 +32,14 @@ CYCLE = {
             "No verified HeLa-specific intermitotic-time CV found; ~2-3 h SD on ~20 h is "
             "typical of mammalian lines. Fit from FUCCI lineage data when available."),
 }
+# Mitotic sub-stages (HeLa, H2B-YFP time-lapse): Chakraborty et al. 2008 Dev Cell 15:657,
+# Table 1 (BioNumbers 102579-102581). Sum 65 min, consistent with M = 1.1 h above.
+# In the model a division event = completion of cytokinesis.
+MITOSIS = {
+    "nebd_to_metaphase": P(34 / 60, "h", "measured", "34 +/- 6 min, Chakraborty et al. 2008"),
+    "metaphase_to_anaphase": P(21 / 60, "h", "measured", "21 +/- 4 min, Chakraborty et al. 2008"),
+    "anaphase_to_cytokinesis": P(10 / 60, "h", "measured", "10 +/- 2 min, Chakraborty et al. 2008"),
+}
 CYCLE_MEAN_H = sum(CYCLE[k].value for k in ("G1", "S", "G2", "M"))  # 20.1 h
 
 # ---------------------------------------------------------------- geometry
@@ -102,7 +110,7 @@ NUMERICS = {
 def table():
     """All parameters as rows (group, name, value, unit, status, source)."""
     rows = []
-    for gname, group in [("cycle", CYCLE), ("volume", VOLUME), ("oxygen", OXYGEN),
+    for gname, group in [("cycle", CYCLE), ("mitosis", MITOSIS), ("volume", VOLUME), ("oxygen", OXYGEN),
                          ("glucose", GLUCOSE), ("lactate", LACTATE), ("mitogen", MITOGEN),
                          ("numerics", NUMERICS)]:
         for k, p in group.items():
