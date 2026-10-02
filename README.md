@@ -56,6 +56,23 @@ Gaps flagged so far:
   inhibition (Montel 2011; Delarue 2014). This is the best place for a small learned rule once spatial data are in.
 - Necrosis timing, hypoxic-arrest threshold (PhysiCell convention), glucose Km: all assumptions.
 
+## Results: 700 µm spheroid vs. HeLa-Fucci data
+Grown from 1,000 seeded cells: 160 h, 102k cells, 205k logged events, 9 min wall time on a laptop.
+![summary](out/spheroid_summary.png)
+
+| readout | model | HeLa-Fucci spheroid (Onozato 2017) | verdict |
+|---|---|---|---|
+| S/G2/M rim thickness | drops to half its surface level between 70 and 90 µm deep | ~70 µm | ✅ matches (calibrated) |
+| interior cell-cycle state | G1-arrested | G1 (Fucci red) | ✅ |
+| core pO2 | **~0.3 mmHg**, plus a small necrotic core (1.7% of cells) | mildly hypoxic (HIF-1α+, pimonidazole−) ≈ 10–40 mmHg, no necrosis reported | ❌ **too hypoxic** |
+
+**Why the core is too hypoxic.** Arrested G1 cells stay small: the mean cell volume is 1,977 µm³ against the
+measured 2,425 µm³. As a result, the spheroid packs ~40% more O2 consumers per volume than the hand estimate,
+which assumed full-size cells and gave a core of ~15 mmHg. Possible fixes, each needing evidence before adoption:
+1. Quiescent cells consume less O2. This is commonly reported in spheroids but not yet sourced here.
+2. Arrested cells keep growing to their normal size.
+3. The graph solver's ~15% over-depletion contributes a smaller share.
+
 ## Run
 ```bash
 pip install -r requirements.txt
