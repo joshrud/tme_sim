@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { makeCellMaterial, makeCellMesh, cellUniforms, SmoothTissueRenderer } from "./cellshader.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -66,9 +67,15 @@ function buildLineage(parent, birth) {
     if (p >= 0) nKids[p + 1]++;
   }
   for (let i = 0; i < n; i++) nKids[i + 1] += nKids[i];
-  const divStart = nKids.slice(), divTimes = new Float32Array(nKids[n]), fill = nKids.slice(0, n);
-  for (let id = 0; id < n; id++) if (parent[id] >= 0) divTimes[fill[parent[id]]++] = birth[id];
-  return { founder, depth, divStart, divTimes };
+  const divStart = nKids.slice(), divTimes = new Float32Array(nKids[n]), divChild = new Int32Array(nKids[n]);
+  const fill = nKids.slice(0, n);
+  for (let id = 0; id < n; id++) {
+    if (parent[id] < 0) continue;
+    const q = fill[parent[id]]++;
+    divTimes[q] = birth[id];
+    divChild[q] = id;
+  }
+  return { founder, depth, divStart, divTimes, divChild };
 }
 
 // ------------------------------------------------------------------ colors
@@ -101,15 +108,20 @@ let extent = 0;  // half-width of the final spheroid, um
 { const f = frames[frames.length - 1]; for (let i = 0; i < 3 * f.n; i++) extent = Math.max(extent, Math.abs(f.pos[i])); }
 extent = Math.ceil(extent / 10 + 20);
 
-function nextDivision(id, t) {  // first division of `id` strictly after t
-  for (let q = lin.divStart[id]; q < lin.divStart[id + 1]; q++) if (lin.divTimes[q] > t) return lin.divTimes[q];
-  return Infinity;
+function nextDivisionIndex(id, t) {  // index (into divTimes/divChild) of the first division after t
+  for (let q = lin.divStart[id]; q < lin.divStart[id + 1]; q++) if (lin.divTimes[q] > t) return q;
+  return -1;
+}
+function nextDivision(id, t) {
+  const q = nextDivisionIndex(id, t);
+  return q < 0 ? Infinity : lin.divTimes[q];
 }
 
 // current interpolated state, shared by the 3D view, the cross-section and picking
 const cur = { n: 0, id: new Uint32Array(maxN), x: new Float32Array(maxN), y: new Float32Array(maxN),
               z: new Float32Array(maxN), r: new Float32Array(maxN), phase: new Int8Array(maxN),
-              o2: new Float32Array(maxN) };
+              o2: new Float32Array(maxN),
+              div: new Float32Array(4 * maxN) };  // division axis xyz + split progress (0 = none)
 
 function computeState(t) {
   let k = 0;
@@ -125,14 +137,22 @@ function computeState(t) {
 
   for (let j = 0; j < B.n; j++) {
     const id = B.id[j], i = m[j], rB = B.r[j] / 10;
-    let x, y, z, r, ph, o2;
+    let x, y, z, r, ph, o2, splitAxis = null;
     if (i >= 0) {  // existed at A: interpolate; if it divides in this window, shrink during the split
       x = lerp(A, i, B, j, 0, f); y = lerp(A, i, B, j, 1, f); z = lerp(A, i, B, j, 2, f);
       const rA = A.r[i] / 10, td = nextDivision(id, A.t);
       o2 = (1 - f) * A.o2[i] + f * B.o2[j];
       if (td <= B.t) {
-        r = t < td - ANA ? rA : t < td ? rA + (rB - rA) * (t - (td - ANA)) / ANA : rB;
+        r = t < td ? rA : rB;
         ph = t >= td ? (f >= 1 ? B.phase[j] : 0) : A.phase[i];
+        const jd = t >= td - ANA && t < td ? indexOf(B.id, B.n, lin.divChild[nextDivisionIndex(id, A.t)]) : -1;
+        if (jd >= 0) {  // anaphase -> cytokinesis: draw mother + daughter as one pinching dumbbell
+          let dx = B.pos[3 * jd] - B.pos[3 * j], dy = B.pos[3 * jd + 1] - B.pos[3 * j + 1], dz = B.pos[3 * jd + 2] - B.pos[3 * j + 2];
+          const len = Math.hypot(dx, dy, dz) || 1, s = (t - (td - ANA)) / ANA, half = s * (rB + B.r[jd] / 10) / 2;
+          dx /= len; dy /= len; dz /= len;
+          x += dx * half; y += dy * half; z += dz * half;
+          splitAxis = [dx, dy, dz, Math.max(s, 1e-3)];
+        }
       } else {
         r = (1 - f) * rA + f * rB;
         ph = f < 0.5 ? A.phase[i] : B.phase[j];
@@ -142,28 +162,24 @@ function computeState(t) {
       o2 = B.o2[j];
       if (jm < 0) {
         r = t >= tb ? rB : 0; x = B.pos[3 * j] / 10; y = B.pos[3 * j + 1] / 10; z = B.pos[3 * j + 2] / 10; ph = 0;
-      } else if (t < tb - ANA) {
-        r = 0; x = y = z = 0; ph = 0;  // not yet split off
+      } else if (t < tb) {
+        r = 0; x = y = z = 0; ph = 0;  // not separate yet: drawn as part of the mother's dumbbell
       } else {
         let dx = B.pos[3 * j] - B.pos[3 * jm], dy = B.pos[3 * j + 1] - B.pos[3 * jm + 1], dz = B.pos[3 * j + 2] - B.pos[3 * jm + 2];
         const len = Math.hypot(dx, dy, dz) || 1, sep = rB + B.r[jm] / 10;
         dx /= len; dy /= len; dz /= len;
         r = rB;
-        if (t < tb) {  // anaphase -> cytokinesis: lobes separate
-          const s = sep * (t - (tb - ANA)) / ANA;
-          x = motherAt(jm, 0, t) + s * dx; y = motherAt(jm, 1, t) + s * dy; z = motherAt(jm, 2, t) + s * dz;
-          ph = 2;
-        } else {
-          const u = (t - tb) / Math.max(B.t - tb, 1e-6);
-          x = (1 - u) * (motherAt(jm, 0, tb) + sep * dx) + u * B.pos[3 * j] / 10;
-          y = (1 - u) * (motherAt(jm, 1, tb) + sep * dy) + u * B.pos[3 * j + 1] / 10;
-          z = (1 - u) * (motherAt(jm, 2, tb) + sep * dz) + u * B.pos[3 * j + 2] / 10;
-          ph = f >= 1 ? B.phase[j] : 0;
-        }
+        const u = (t - tb) / Math.max(B.t - tb, 1e-6);  // drift from the split point to its place
+        x = (1 - u) * (motherAt(jm, 0, tb) + sep * dx) + u * B.pos[3 * j] / 10;
+        y = (1 - u) * (motherAt(jm, 1, tb) + sep * dy) + u * B.pos[3 * j + 1] / 10;
+        z = (1 - u) * (motherAt(jm, 2, tb) + sep * dz) + u * B.pos[3 * j + 2] / 10;
+        ph = f >= 1 ? B.phase[j] : 0;
       }
     }
     if (ph >= 0 && nextDivision(id, t) - t <= M_TOTAL) ph = 2;  // in mitosis (NEBD -> cytokinesis)
     cur.id[j] = id; cur.x[j] = x; cur.y[j] = y; cur.z[j] = z; cur.r[j] = r; cur.phase[j] = ph; cur.o2[j] = o2;
+    const D = splitAxis || [0, 0, 0, 0];
+    cur.div[4 * j] = D[0]; cur.div[4 * j + 1] = D[1]; cur.div[4 * j + 2] = D[2]; cur.div[4 * j + 3] = D[3];
   }
   cur.n = B.n;
 }
@@ -193,23 +209,23 @@ function drawLegend() {
 const canvas = $("view");
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+const BG = new THREE.Color(0x0e1116);
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x0e1116);
 const camera = new THREE.PerspectiveCamera(40, 1, 1, 10000);
 camera.position.set(extent * 2.2, extent * 1.4, extent * 2.2);
+camera.layers.enableAll();  // cells are on layer 1, overlays on layer 0
 const controls = new OrbitControls(camera, canvas);
 controls.enableDamping = true;
-scene.add(new THREE.AmbientLight(0xffffff, 0.55));
-const sun = new THREE.DirectionalLight(0xffffff, 1.6);
+const ambient = new THREE.AmbientLight(0xffffff, 0.55), sun = new THREE.DirectionalLight(0xffffff, 1.6);
 sun.position.set(1, 2, 1.5);
-scene.add(sun);
+scene.add(ambient, sun);
 
-const material = new THREE.MeshLambertMaterial({ transparent: true, opacity: 1 });
-const cells = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 1), material, maxN);
-cells.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-cells.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(3 * maxN), 3);
-cells.frustumCulled = false;
-scene.add(cells);
+// most cells use a light mesh; the few currently dividing get a finer one so the furrow looks smooth
+const material = makeCellMaterial();
+const cells = makeCellMesh(1, maxN, material);
+const dividing = makeCellMesh(3, 5000, material);
+scene.add(cells, dividing);
+const smooth = new SmoothTissueRenderer(renderer);
 
 // translucent plane showing where the cross-section is taken
 const planeMesh = new THREE.Mesh(
@@ -227,20 +243,31 @@ marker.visible = false;
 scene.add(marker);
 
 function updateInstances() {
-  const M = cells.instanceMatrix.array, C = cells.instanceColor.array;
+  const meshes = [cells, dividing], k = [0, 0];
   for (let i = 0; i < cur.n; i++) {
     // when a clone is highlighted, hide everything else in 3D (the cross-section keeps it dimmed)
-    const r = ui.clone >= 0 && lin.founder[cur.id[i]] !== ui.clone ? 0 : cur.r[i], o = 16 * i;
+    const r = ui.clone >= 0 && lin.founder[cur.id[i]] !== ui.clone ? 0 : cur.r[i];
+    if (r <= 0) continue;
+    const which = cur.div[4 * i + 3] > 0 && k[1] < dividing.instanceMatrix.count ? 1 : 0;
+    const mesh = meshes[which], n = k[which]++;
+    const M = mesh.instanceMatrix.array, o = 16 * n;
     M[o] = r; M[o + 1] = 0; M[o + 2] = 0; M[o + 3] = 0;
     M[o + 4] = 0; M[o + 5] = r; M[o + 6] = 0; M[o + 7] = 0;
     M[o + 8] = 0; M[o + 9] = 0; M[o + 10] = r; M[o + 11] = 0;
     M[o + 12] = cur.x[i]; M[o + 13] = cur.y[i]; M[o + 14] = cur.z[i]; M[o + 15] = 1;
-    const c = colorOf(i);
-    C[3 * i] = c[0]; C[3 * i + 1] = c[1]; C[3 * i + 2] = c[2];
+    const c = colorOf(i), C = mesh.instanceColor.array;
+    C[3 * n] = c[0]; C[3 * n + 1] = c[1]; C[3 * n + 2] = c[2];
+    const dv = mesh.geometry.attributes.aDiv.array;
+    for (let q = 0; q < 4; q++) dv[4 * n + q] = cur.div[4 * i + q];
+    mesh.geometry.attributes.aSeed.array[n] = (cur.id[i] * 0.6180339887 % 1) * 6.283;
   }
-  cells.count = cur.n;
-  cells.instanceMatrix.needsUpdate = true;
-  cells.instanceColor.needsUpdate = true;
+  meshes.forEach((mesh, w) => {
+    mesh.count = k[w];
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.instanceColor.needsUpdate = true;
+    mesh.geometry.attributes.aDiv.needsUpdate = true;
+    mesh.geometry.attributes.aSeed.needsUpdate = true;
+  });
   const s = ui.selected >= 0 ? indexOf(cur.id, cur.n, ui.selected) : -1;
   marker.visible = s >= 0 && cur.r[s] > 0;
   if (marker.visible) {
@@ -342,7 +369,7 @@ canvas.addEventListener("pointerup", (e) => {
 
 // ------------------------------------------------------------------ UI state
 const ui = { t: T0, playing: false, speed: 12, color: "phase", axis: 2, slice: 0,
-             selected: -1, clone: -1, dirty: true };
+             selected: -1, clone: -1, style: "spheres", smoothing: 10, opacity: 1, dirty: true };
 const time = $("time");
 time.min = T0; time.max = T1;
 $("slice").min = -extent; $("slice").max = extent;
@@ -367,10 +394,13 @@ $("speed").oninput = (e) => {
 $("speed").value = (100 * Math.log(12 / SPEED_MIN) / Math.log(SPEED_MAX / SPEED_MIN)).toFixed(0);
 $("speed").oninput({ target: $("speed") });
 $("opacity").oninput = (e) => {
-  material.opacity = +e.target.value;
+  ui.opacity = material.opacity = +e.target.value;
   material.depthWrite = material.opacity > 0.99;  // see inner cells through outer ones
   $("oval").textContent = material.opacity.toFixed(2);
 };
+$("style").onchange = (e) => { ui.style = e.target.value; $("smoothRow").hidden = ui.style !== "smooth"; };
+$("smoothing").oninput = (e) => { ui.smoothing = +e.target.value; $("smval").textContent = `${ui.smoothing} µm`; };
+$("wobble").onchange = (e) => { cellUniforms.uWobble.value = e.target.checked ? 0.035 : 0; };
 $("color").onchange = (e) => { ui.color = e.target.value; drawLegend(); ui.dirty = true; };
 $("slice").oninput = (e) => { ui.slice = +e.target.value; $("pval").textContent = `${ui.slice} µm`; placePlane(); ui.dirty = true; };
 for (const b of document.querySelectorAll("#plane button")) {
@@ -424,6 +454,8 @@ $("record").onclick = () => {
 // ------------------------------------------------------------------ loop
 function resize() {
   renderer.setSize(innerWidth, innerHeight, false);
+  const db = renderer.getDrawingBufferSize(new THREE.Vector2());
+  smooth.setSize(db.x, db.y);
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
 }
@@ -431,7 +463,8 @@ addEventListener("resize", resize);
 resize();
 
 // handle for console inspection / scripting
-window.tme = { cur, lin, parent, birth, camera, controls, ui, setTime,
+window.tme = { cur, lin, parent, birth, camera, controls, ui, setTime, renderer, scene, cells, dividing,
+  computeState, updateInstances, drawSection,
   select: (id) => { ui.selected = id; ui.dirty = true; showSelection(); },
   refresh: () => { computeState(ui.t); updateInstances(); drawSection(); updateCloneCount(); } };  // sync, for scripts
 
@@ -459,7 +492,14 @@ function loop(now) {
     ui.dirty = false;
   }
   controls.update();
-  renderer.render(scene, camera);
+  cellUniforms.uTime.value = now / 1000;
+  if (ui.style === "smooth") {
+    smooth.render(scene, camera, [cells, dividing], { smoothing: ui.smoothing, opacity: ui.opacity,
+                  lightDir: sun.position.clone().normalize(), clearColor: BG });
+  } else {
+    renderer.setClearColor(BG, 1);
+    renderer.render(scene, camera);
+  }
   if (rec.recorder) compositeFrame();
   requestAnimationFrame(loop);
 }
