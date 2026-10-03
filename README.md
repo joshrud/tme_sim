@@ -92,6 +92,16 @@ python -m http.server 8765 --directory viewer    # then open http://localhost:87
   - the mother turns **yellow** 65 min before cytokinesis (nuclear envelope breakdown);
   - in the last 10 min (anaphase → cytokinesis) the daughter emerges from the mother and the two lobes separate, both yellow;
   - both become G1 (red) once cytokinesis completes.
+- **Division shape**: from anaphase to cytokinesis the dividing cell is drawn as one mesh that elongates along the
+  division axis and pinches a cleavage furrow, then becomes two daughters. The shape comes from the vertex shader,
+  and a finer mesh is used for cells mid-division.
+- **Rendering**:
+  - *Cells (spheres)*, with an optional subtle membrane wobble.
+  - *Smooth tissue (blob)*: a screen-space surface (the technique used for particle fluids). Cell color and depth
+    are drawn to a texture, blurred with a depth-aware filter, and lit as one continuous surface. The **Smoothing**
+    slider sets the blur radius in µm. This is visual only, not physics. Interior cells aren't visible in this mode,
+    so opacity fades the surface.
+  - Measured per-frame cost at 102k cells: ~19 ms (state update + upload + draw); smooth mode adds its blur passes.
 - **Lineage**: color by founding clone, or click any cell to see its ancestry (seeded founder → … → cell, with
   birth times) and the live size of its clone. "Highlight clone" isolates that clone in 3D.
 - **Cell opacity** slider: lower it to see the interior through the outer cells.

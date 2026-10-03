@@ -35,6 +35,8 @@
   .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: -1px; }
   #status { margin-top: 8px; color: var(--muted); font-variant-numeric: tabular-nums; }
   .muted { color: var(--muted); }
+  label.check { display: flex; gap: 6px; align-items: center; color: var(--text); }
+  label.check input { accent-color: var(--accent); margin: 0; }
   #lineage div { margin-top: 4px; }
   .path { font-size: 11px; max-height: 72px; overflow-y: auto; word-break: break-word; }
   #loading { position: fixed; inset: 0; display: grid; place-items: center; color: var(--muted); }
@@ -66,6 +68,16 @@
   <input id="speed" type="range" min="0" max="100" step="1" value="80">
   <label>Cell opacity <span id="oval">1.00</span></label>
   <input id="opacity" type="range" min="0.02" max="1" step="0.01" value="1">
+  <label>Rendering</label>
+  <select id="style">
+    <option value="spheres">Cells (spheres)</option>
+    <option value="smooth">Smooth tissue (blob)</option>
+  </select>
+  <div id="smoothRow" hidden>
+    <label>Smoothing <span id="smval">10 µm</span></label>
+    <input id="smoothing" type="range" min="2" max="30" step="0.5" value="10">
+  </div>
+  <label class="check"><input id="wobble" type="checkbox" checked> Membrane wobble</label>
   <label>Color by</label>
   <select id="color">
     <option value="phase">Cell-cycle phase (Fucci-style)</option>
