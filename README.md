@@ -81,6 +81,48 @@ python run_spheroid.py 700     # grow to 700 um (writes out/)
 python analyze.py              # compare to HeLa-Fucci spheroid
 ```
 
+## T cells (v0: naive and effector CD8 T cells)
+T cells are motile agents (`tme/tcells.py`) that **enter** at the tumor margin, take a persistent random walk with
+tumor cells as obstacles, and **exit** if they wander more than 200 µm beyond the tumor edge. Every entry, exit, hit,
+kill and anergy event is logged. Parameters are in `params.TCELL`, with sources.
+
+| State | Behavior | Evidence |
+|---|---|---|
+| **Naive** | 8 µm; 10.3 µm/min, median turn 47.5°. No killing machinery. Cognate contact gives signal 1 only. | Mrass 2006; Kaech & Cui 2012 |
+| **Anergic** | Naive cell given signal 1 without CD28 costimulation for 8 h cumulative. Hyporesponsive. | Chen & Flies 2013; Schwartz 2003 (8 h threshold = assumption) |
+| **Effector CTL** | Blast (~3× volume), 8 µm/min in tumor. Arrests on cognate tumor cells for ~15 min (median) contacts. Each contact = one perforin/granzyme **hit**. | Boissonnas 2007; Weigelin 2021 |
+
+**Killing is multi-hit.** About 5% of single contacts kill. Otherwise sublethal damage accumulates and decays with a
+49 min median recovery; ~3 hits within that window kill. The target becomes **apoptotic** (rounding within 2 min,
+Lopez 2013) and is cleared 6 h later (assumption: no phagocytes yet). Only effector CTLs kill.
+
+**Who recognizes HeLa:**
+- In a naive polyclonal repertoire, ~7% of T cells react to HeLa. HeLa is allogeneic to any donor, and ~7% is
+  the alloreactive precursor frequency (Suchin 2001, mouse; a proxy).
+- HeLa is reported to lack CD80/CD86 (low-confidence source). So naive T cells cannot be primed by HeLa alone.
+  Priming waits for dendritic cells and macrophages.
+
+```bash
+python run_spheroid.py --tcells naive    --t-end 120 --snap-every 6 --out out/naive
+python run_spheroid.py --tcells effector --t-end 120 --snap-every 6 --out out/effector   # e.g. adoptive transfer
+python export_viewer.py out/effector     # then open http://localhost:8765/?run=effector
+```
+
+**Results: 1,000 seeded cells, T cells arriving at 10/h from 72 h to 120 h**
+
+| Run | T cells entered | Exited | Anergic | Hits | Kills | Kills per CTL-day |
+|---|---|---|---|---|---|---|
+| Naive | 451 (27 cognate) | 406 | 0 | 0 | 0 | — |
+| Effector | 474 | 314 | — | 8,783 | 841 | ~2 |
+
+- **Naive:** T cells wander past the tumor and leave without engaging it. That is immunological ignorance, which is
+  expected with no APCs and no chemokine guidance (TILs show no long-range chemotaxis, Mrass 2006). Too few cognate
+  cells stay in contact for 8 h to become anergic.
+- **Effector:** the killing rate emerges from the hit rules and falls inside the measured in vivo range of 2–16 kills
+  per CTL per day (Halle 2016). The tumor still grows because proliferation outpaces killing at this CTL dose.
+- **Not yet modeled:** T cells don't push tumor cells, consume nutrients, divide, or follow chemokines. Effector
+  exhaustion, IFN-γ and PD-L1 are next.
+
 ## 4D viewer (three.js)
 ```bash
 python export_viewer.py                          # out/snapshots.npz -> viewer/data/frames.bin.gz
@@ -102,6 +144,14 @@ python -m http.server 8765 --directory viewer    # then open http://localhost:87
     slider sets the blur radius in µm. This is visual only, not physics. Interior cells aren't visible in this mode,
     so opacity fades the surface.
   - Measured per-frame cost at 102k cells: ~19 ms (state update + upload + draw); smooth mode adds its blur passes.
+- **T cells**: white spheres with a big **T** that always faces the camera. The letter shows state: black =
+  naive, gray = anergic, red = effector CTL.
+  - New T cells **fly in from the +x side** to where they entered, and leaving T cells fly back out. These
+    animations run in wall-clock time (~1.4 s), so they are visible at any playback speed.
+  - Each CTL hit shows a burst of **magenta perforin/granzyme granules** traveling to the target (~1 s). Killed cells
+    turn **purple** (apoptotic) and shrink until cleared.
+  - Click a T cell for its state, whether it recognizes HeLa, and its hits and kills so far.
+  - Pick a run with `?run=<name>`.
 - **Lineage**: color by founding clone, or click any cell to see its ancestry (seeded founder → … → cell, with
   birth times) and the live size of its clone. "Highlight clone" isolates that clone in 3D.
 - **Cell opacity** slider: lower it to see the interior through the outer cells.

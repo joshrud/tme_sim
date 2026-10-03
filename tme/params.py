@@ -94,6 +94,56 @@ MITOGEN = {
     "arrest": P(0.5, "normalized", "assumption", "G1 arrest below half of medium level"),
 }
 
+# ---------------------------------------------------------------- T cells
+# Naive T cells need signal 1 (TCR-MHC/peptide) + signal 2 (CD28-CD80/86 costimulation) to
+# become effectors (Chen & Flies 2013, Nat Rev Immunol, doi:10.1038/nri3405); naive cells
+# have no cytotoxic machinery until they differentiate (Kaech & Cui 2012, doi:10.1038/nri3307).
+# Signal 1 without costimulation drives naive T cells into adaptive tolerance / anergy
+# (Schwartz 2003, Annu Rev Immunol, doi:10.1146/annurev.immunol.21.120601.141110).
+TCELL = {
+    "diameter_naive": P(8.0, "um", "measured", "resting lymphocyte 8-11 um, BioNumbers 108368 (low end)"),
+    "blast_volume_factor": P(3.0, "-", "measured",
+                             "activated T cells enlarge 2-4x in volume (blastogenesis), JoVE 2016 PMC5226628; midpoint"),
+    "speed_naive": P(10.3, "um/min", "measured", "median, Mrass et al. 2006 J Exp Med, doi:10.1084/jem.20060710"),
+    "turn_angle_median": P(47.5, "deg", "measured",
+                           "median turning angle, Mrass 2006 (applied per 1-min substep: assumption)"),
+    "speed_effector": P(8.0, "um/min", "measured",
+                        "CTL in tumors, 8 +/- 3 and 10 +/- 4 um/min, Boissonnas et al. 2007 J Exp Med, "
+                        "doi:10.1084/jem.20061890; 7.9 um/min, Mrass 2006"),
+    # Fraction of a polyclonal naive repertoire that recognizes HeLa (allogeneic to any donor).
+    "cognate_fraction_naive": P(0.07, "-", "proxy",
+                                "~7% alloreactive across an MHC mismatch, Suchin et al. 2001 J Immunol "
+                                "(mouse), doi:10.4049/jimmunol.166.2.973"),
+    "tumor_costimulation": P(0.0, "bool", "assumption",
+                             "HeLa reported B7-1/B7-2 (CD80/86) low - single low-confidence source; tumor "
+                             "cells can directly prime naive CD8 T cells in some models (Thompson et al. "
+                             "2010 J Exp Med, doi:10.1084/jem.20092454)"),
+    "anergy_signal1_h": P(8.0, "h", "assumption",
+                          "cumulative cognate contact without costimulation before anergy; analog of the "
+                          "~8 h first priming phase (Mempel et al. 2004 Nature, doi:10.1038/nature02238)"),
+    # Effector CTL killing (perforin + granzymes)
+    "contact_median": P(15.0, "min", "measured",
+                        "median CTL-tumor contact, Weigelin et al. 2021 Nat Commun, doi:10.1038/s41467-021-25282-3"),
+    "hits_to_kill": P(3.0, "hits", "measured", "~3 serial sublethal hits, Weigelin 2021"),
+    "single_hit_lethal": P(0.05, "-", "measured", "~5% of single contacts kill directly, Weigelin 2021"),
+    "damage_recovery_median": P(49.0, "min", "measured",
+                                "median recovery of sublethal damage, Weigelin 2021 (exponential decay)"),
+    "perforin_pore": P(0.5, "min", "measured",
+                       "target permeabilized within ~30 s, Lopez et al. 2013 Blood, doi:10.1182/blood-2012-07-446146"),
+    "apoptosis_onset": P(2.0, "min", "measured", "caspase-dependent rounding within 2 min, Lopez 2013"),
+    "apoptotic_clearance": P(6.0, "h", "assumption",
+                             "apoptotic cell persists before removal; no phagocytes in the model yet"),
+    "squeeze": P(0.8, "-", "assumption", "T cells may overlap tumor cells by 20% when passing between them"),
+    "world_margin": P(200.0, "um", "assumption",
+                      "T cells farther than this beyond the tumor edge leave the tissue (exit); naive T "
+                      "cells recirculate rather than residing in tissue"),
+    "substep": P(1.0, "min", "numerical", "T-cell motility substep"),
+    "track_every": P(2.0, "min", "numerical", "T-cell positions recorded for the viewer"),
+}
+# In vivo context for validation: one CTL kills 2-16 infected cells/day (Halle et al. 2016 Immunity,
+# doi:10.1016/j.immuni.2016.01.010); a single tumor-cell kill took ~6 h on average (Breart et al.
+# 2008 J Clin Invest, doi:10.1172/jci34388).
+
 # ---------------------------------------------------------------- numerics
 NUMERICS = {
     "dt": P(0.25, "h", "numerical", "biology step; fields are quasi-steady (diffusion ~s-min)"),
@@ -111,7 +161,7 @@ def table():
     """All parameters as rows (group, name, value, unit, status, source)."""
     rows = []
     for gname, group in [("cycle", CYCLE), ("mitosis", MITOSIS), ("volume", VOLUME), ("oxygen", OXYGEN),
-                         ("glucose", GLUCOSE), ("lactate", LACTATE), ("mitogen", MITOGEN),
+                         ("glucose", GLUCOSE), ("lactate", LACTATE), ("mitogen", MITOGEN), ("tcell", TCELL),
                          ("numerics", NUMERICS)]:
         for k, p in group.items():
             rows.append((gname, k, p.value, p.unit, p.status, p.source))
