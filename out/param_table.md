@@ -5,6 +5,9 @@
 | cycle | G2 | 4.56 | h | **measured** | Puck & Steffen 1963 |
 | cycle | M | 1.1 | h | **measured** | Puck & Steffen 1963 |
 | cycle | cv | 0.15 | - | **assumption** | No verified HeLa-specific intermitotic-time CV found; ~2-3 h SD on ~20 h is typical of mammalian lines. Fit from FUCCI lineage data when available. |
+| mitosis | nebd_to_metaphase | 0.566667 | h | **measured** | 34 +/- 6 min, Chakraborty et al. 2008 |
+| mitosis | metaphase_to_anaphase | 0.35 | h | **measured** | 21 +/- 4 min, Chakraborty et al. 2008 |
+| mitosis | anaphase_to_cytokinesis | 0.166667 | h | **measured** | 10 +/- 2 min, Chakraborty et al. 2008 |
 | volume | mean | 2425 | um^3 | **measured** | BioNumbers 103719 / 109386 (HeLa) |
 | volume | birth | 1617 | um^3 | **derived** | 2/3 * mean volume (linear growth V_b -> 2V_b) |
 | oxygen | D | 2000 | um^2/s | **measured** | ~water value used for spheroids, Grimes et al. 2014 J R Soc Interface 11:20131124 |
@@ -26,6 +29,25 @@
 | mitogen | bath | 1 | normalized | **assumption** | medium level = 1 |
 | mitogen | uptake_rate | 0.0257 | 1/s | **calibrated** | decay length 76 um: spherical solution (R/r)sinh(r/L)/sinh(R/L) = 0.5 at 70 um depth in a 700 um spheroid (Onozato 2017 rim) |
 | mitogen | arrest | 0.5 | normalized | **assumption** | G1 arrest below half of medium level |
+| tcell | diameter_naive | 8 | um | **measured** | resting lymphocyte 8-11 um, BioNumbers 108368 (low end) |
+| tcell | blast_volume_factor | 3 | - | **measured** | activated T cells enlarge 2-4x in volume (blastogenesis), JoVE 2016 PMC5226628; midpoint |
+| tcell | speed_naive | 10.3 | um/min | **measured** | median, Mrass et al. 2006 J Exp Med, doi:10.1084/jem.20060710 |
+| tcell | turn_angle_median | 47.5 | deg | **measured** | median turning angle, Mrass 2006 (applied per 1-min substep: assumption) |
+| tcell | speed_effector | 8 | um/min | **measured** | CTL in tumors, 8 +/- 3 and 10 +/- 4 um/min, Boissonnas et al. 2007 J Exp Med, doi:10.1084/jem.20061890; 7.9 um/min, Mrass 2006 |
+| tcell | cognate_fraction_naive | 0.07 | - | **proxy** | ~7% alloreactive across an MHC mismatch, Suchin et al. 2001 J Immunol (mouse), doi:10.4049/jimmunol.166.2.973 |
+| tcell | tumor_costimulation | 0 | bool | **assumption** | HeLa reported B7-1/B7-2 (CD80/86) low - single low-confidence source; tumor cells can directly prime naive CD8 T cells in some models (Thompson et al. 2010 J Exp Med, doi:10.1084/jem.20092454) |
+| tcell | anergy_signal1_h | 8 | h | **assumption** | cumulative cognate contact without costimulation before anergy; analog of the ~8 h first priming phase (Mempel et al. 2004 Nature, doi:10.1038/nature02238) |
+| tcell | contact_median | 15 | min | **measured** | median CTL-tumor contact, Weigelin et al. 2021 Nat Commun, doi:10.1038/s41467-021-25282-3 |
+| tcell | hits_to_kill | 3 | hits | **measured** | ~3 serial sublethal hits, Weigelin 2021 |
+| tcell | single_hit_lethal | 0.05 | - | **measured** | ~5% of single contacts kill directly, Weigelin 2021 |
+| tcell | damage_recovery_median | 49 | min | **measured** | median recovery of sublethal damage, Weigelin 2021 (exponential decay) |
+| tcell | perforin_pore | 0.5 | min | **measured** | target permeabilized within ~30 s, Lopez et al. 2013 Blood, doi:10.1182/blood-2012-07-446146 |
+| tcell | apoptosis_onset | 2 | min | **measured** | caspase-dependent rounding within 2 min, Lopez 2013 |
+| tcell | apoptotic_clearance | 6 | h | **assumption** | apoptotic cell persists before removal; no phagocytes in the model yet |
+| tcell | squeeze | 0.8 | - | **assumption** | T cells may overlap tumor cells by 20% when passing between them |
+| tcell | world_margin | 200 | um | **assumption** | T cells farther than this beyond the tumor edge leave the tissue (exit); naive T cells recirculate rather than residing in tissue |
+| tcell | substep | 1 | min | **numerical** | T-cell motility substep |
+| tcell | track_every | 2 | min | **numerical** | T-cell positions recorded for the viewer |
 | numerics | dt | 0.25 | h | **numerical** | biology step; fields are quasi-steady (diffusion ~s-min) |
 | numerics | packing | 0.86 | - | **derived** | rest distance = 0.86*(r_i+r_j) -> space-filling tissue |
 | numerics | contact_tol | 1.15 | - | **numerical** | edge if distance < tol * rest distance |

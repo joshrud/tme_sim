@@ -11,8 +11,9 @@ from scipy.sparse.linalg import cg
 from scipy.spatial import cKDTree
 
 from . import params as P
+from .tcells import TCells
 
-ALIVE, NECROTIC = 0, 1
+ALIVE, NECROTIC, APOPTOTIC = 0, 1, 2
 UM3_TO_L = 1e-15
 
 
@@ -35,6 +36,8 @@ class Field:
 
 
 class World:
+    APOPTOTIC = APOPTOTIC
+
     def __init__(self, seed=0):
         self.rng = np.random.default_rng(seed)
         self.t = 0.0  # hours
@@ -47,10 +50,13 @@ class World:
         self.age = np.zeros(n)        # hours into current cycle
         self.T = np.zeros(n)          # this cell's cycle length (h)
         self.state = np.zeros(n, int)
+        self.damage = np.zeros(n)       # accumulated sublethal CTL hits (decays)
+        self.t_dead = np.zeros(n)       # time of apoptosis (APOPTOTIC cells)
         self.events = []              # (t, kind, id, other) - birth/death/enter/exit
         self.edges = np.zeros((0, 2), int)
         self.dist = np.zeros(0)
 
+        self.tcells = TCells(self)
         o, g, l, m = P.OXYGEN, P.GLUCOSE, P.LACTATE, P.MITOGEN
         # oxygen in mmHg: amount/s -> mmHg*L/s via solubility
         self.fields = {
@@ -91,6 +97,8 @@ class World:
         self.age = np.concatenate([self.age, age])
         self.T = np.concatenate([self.T, T])
         self.state = np.concatenate([self.state, np.full(k, ALIVE)])
+        self.damage = np.concatenate([self.damage, np.zeros(k)])
+        self.t_dead = np.concatenate([self.t_dead, np.zeros(k)])
         parent = np.broadcast_to(parent, k)
         self.events += [(self.t, kind, int(i), int(p)) for i, p in zip(ids, parent)]
         for f in self.fields.values():
@@ -103,7 +111,7 @@ class World:
         for i in self.id[mask]:
             self.events.append((self.t, kind, int(i), -1))
         keep = ~mask
-        for a in ("id", "ctype", "pos", "vol", "age", "T", "state"):
+        for a in ("id", "ctype", "pos", "vol", "age", "T", "state", "damage", "t_dead"):
             setattr(self, a, getattr(self, a)[keep])
         for f in self.fields.values():
             if f.c is not None:
@@ -220,10 +228,11 @@ class World:
 
     # ------------------------------------------------------------ biology
     def phase(self):
-        """FUCCI-style label: 0 = G1 (red), 1 = S/G2/M (green), -1 = necrotic."""
+        """FUCCI-style label: 0 = G1 (red), 1 = S/G2/M (green), -1 = necrotic, -2 = apoptotic."""
         g1 = self.T * P.CYCLE["G1"].value / P.CYCLE_MEAN_H
         ph = (self.age >= g1).astype(int)
         ph[self.state == NECROTIC] = -1
+        ph[self.state == APOPTOTIC] = -2
         return ph
 
     def step(self):
@@ -268,6 +277,14 @@ class World:
 
         for _ in range(int(P.NUMERICS["mech_iters"].value)):
             self.relax()
+
+        # T cells move and act over this step; killed cells are cleared after a delay
+        self.tcells.step(dt)
+        gone = (self.state == APOPTOTIC) & (self.t + dt >= self.t_dead + P.TCELL["apoptotic_clearance"].value)
+        if gone.any():
+            self.t += dt  # log clearance at the end of the step
+            self.remove_cells(gone, kind="cleared")
+            self.t -= dt
         self.t += dt
 
     # ------------------------------------------------------------ readouts
