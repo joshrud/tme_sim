@@ -35,6 +35,8 @@ ap.add_argument("--indication", default=DEFAULT_INDICATION, choices=sorted(INDIC
                 help="tumor type: sets reference cell line, doubling time, drivers, mutation rate")
 ap.add_argument("--fibroblasts", action="store_true",
                 help="seed fibroblasts at the indication's fraction and let them deposit ECM")
+ap.add_argument("--immune", action="store_true",
+                help="procedurally generate this indication's immune compartment")
 ap.add_argument("--out", default="out")
 args = ap.parse_args()
 os.makedirs(args.out, exist_ok=True)
@@ -48,6 +50,8 @@ w.seed_ball(1000)
 if args.fibroblasts:
     print(f"fibroblasts: seeded {w.seed_fibroblasts()} "
           f"({100 * FIBRO_FRACTION[w.indication.key]:.0f}% of tumor cells)")
+if args.immune:
+    print(f"immune: {w.seed_immune()}")
 snaps, rows = [], []
 t0 = time.time()
 step = 0
@@ -77,7 +81,8 @@ while not done():
                          frac_quiescent=w.quiescent.mean(),
                          median_mut=float(np.median(w.n_mut)),
                          cells_with_driver=int((w.mutations.n_drivers(w.driver_mask) > 0).sum()),
-                         fibroblasts=w.fibroblasts.n,
+                         fibroblasts=w.fibroblasts.n, immune=w.immune.n,
+                         **{f"n_{k.replace(' ', '_')}": v for k, v in w.immune.counts().items()},
                          ecm_mean=round(float(np.mean(w.fibroblasts.ecm_at(w.pos))), 4) if w.fibroblasts.ecm is not None else 0.0,
                          tcells=tc.n, t_anergic=int(np.sum(tc.state == 1)),
                          hits=ev.count("hit"), kills=ev.count("killed"),
@@ -107,6 +112,8 @@ np.savez_compressed(f"{args.out}/fibroblasts.npz",
                     ecm=fb.ecm.rho if fb.ecm is not None else np.zeros((1, 1, 1), np.float32),
                     ecm_origin=fb.ecm.origin if fb.ecm is not None else np.zeros(3),
                     ecm_h=np.array([fb.ecm.h if fb.ecm is not None else 0.0]))
+np.savez_compressed(f"{args.out}/immune.npz", pos=w.immune.pos.astype(np.float32),
+                    kind=w.immune.kind.astype(np.int8), id=w.immune.id)
 with open(f"{args.out}/indication.txt", "w") as fh:
     fh.write(f"{w.indication.key}\t{w.indication.name}\t{w.indication.line}\n"
              f"doubling_h\t{w.indication.doubling_h}\n"

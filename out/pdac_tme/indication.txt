@@ -1,0 +1,5 @@
+PDAC	Pancreatic ductal adenocarcinoma	PANC-1
+doubling_h	29.0
+mut_per_division	11.40
+truncal	KRAS,TP53,CDKN2A
+sources	Bailey 2016 PMID 26909576; TCGA PDAC 2017 PMID 28810144; Cellosaurus PANC-1

@@ -166,7 +166,9 @@ def table():
         for k, p in group.items():
             rows.append((gname, k, p.value, p.unit, p.status, p.source))
     from .fibroblasts import table as fibroblast_table
+    from .immune import table as immune_table
     from .indications import table as indication_table
     rows += indication_table()
     rows += fibroblast_table()
+    rows += immune_table()
     return rows
