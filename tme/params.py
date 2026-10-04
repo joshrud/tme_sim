@@ -165,6 +165,8 @@ def table():
                          ("numerics", NUMERICS)]:
         for k, p in group.items():
             rows.append((gname, k, p.value, p.unit, p.status, p.source))
+    from .fibroblasts import table as fibroblast_table
     from .indications import table as indication_table
     rows += indication_table()
+    rows += fibroblast_table()
     return rows

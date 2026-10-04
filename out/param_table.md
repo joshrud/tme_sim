@@ -69,3 +69,20 @@
 | indication | CESC.doubling_h | 20.1 | h | **measured** | median of Cellosaurus-reported values for HeLa (range 20.1-48 h) |
 | indication | CESC.tumor_factor | 10.0 | - | **assumption** | placed in the Werner 2020 4-100x range using relative TMB |
 | indication | CESC.mut_per_division | 11.4 | mutations/division | **derived** | 1.14 * tumor_factor, Werner et al. 2020 |
+| fibroblast | diameter | 15.0 | um | **assumption** | modeled as a sphere of roughly tumor-cell volume |
+| fibroblast | speed | 10.0 | um/h | **proxy** | human fibroblasts in 3D collagen I, Hakkinen et al. 2011 doi:10.1089/ten.tea.2010.0273; normal fibroblasts, not CAFs |
+| fibroblast | division_h | 120.0 | h | **assumption** | CAF turnover in tumors; no direct measurement found |
+| fibroblast | myCAF_radius | 50.0 | um | **assumption** | distance to tumor within which a fibroblast is myCAF (TGF-beta proxy) |
+| fibroblast | margin | 250.0 | um | **assumption** | fibroblasts stay within this distance of the tumor edge; CAFs are tissue-resident and do not disperse like circulating cells |
+| fibroblast | ecm_voxel | 20.0 | um | **numerical** | ECM grid spacing, ~1.3 cell diameters |
+| fibroblast | ecm_radius | 30.0 | um | **assumption** | matrix is deposited locally around the cell |
+| fibroblast | ecm_deposit | 0.0012 | 1/h | **calibrated** | density added per voxel per hour by a myCAF; set so the PDAC tumor edge reaches 0.72 density at 7 days (>0.7 target; desmoplasia, Whatcott 2015 / Erkan 2008). The same rate for every indication: ordering comes from fibroblast number alone |
+| fibroblast | ecm_icaf_scale | 0.3 | - | **assumption** | iCAFs deposit less matrix than myCAFs |
+| fibroblast | ecm_decay | 0.002 | 1/h | **assumption** | slow turnover; MMP activity not modeled |
+| fibroblast | ecm_barrier | 0.6 | - | **assumption** | T cells cannot move into matrix denser than this. Salmon et al. 2012 report that aligned dense fibers restrict T cells from entering tumor islets; a speed penalty alone reproduces the opposite (slower cells dwell near tumor and kill more) |
+| fibroblast | ecm_block | 0.8 | - | **assumption** | fraction of T-cell speed lost in fully dense matrix; the effect is measured (Salmon et al. 2012 doi:10.1172/JCI45817), this functional form is not |
+| fibroblast | fraction.PDAC | 0.35 | - | **assumption** | fraction of all cells that are fibroblasts; ordering supported, value is not |
+| fibroblast | fraction.OV | 0.15 | - | **assumption** | fraction of all cells that are fibroblasts; ordering supported, value is not |
+| fibroblast | fraction.BRCA | 0.15 | - | **assumption** | fraction of all cells that are fibroblasts; ordering supported, value is not |
+| fibroblast | fraction.LUAD | 0.1 | - | **assumption** | fraction of all cells that are fibroblasts; ordering supported, value is not |
+| fibroblast | fraction.CESC | 0.1 | - | **assumption** | fraction of all cells that are fibroblasts; ordering supported, value is not |

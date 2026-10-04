@@ -85,6 +85,8 @@ class TCells:
             w.damage *= np.exp(-dt_min / tau_damage)
             r_T = _radius(self.state)
             speed = np.where(self.state == EFFECTOR, TC["speed_effector"].value, TC["speed_naive"].value)
+            # dense matrix slows T cells (Salmon et al. 2012 doi:10.1172/JCI45817)
+            speed = speed * w.fibroblasts.speed_factor(self.pos)
 
             # end finished contacts
             done = (self.target >= 0) & (t >= self.contact_end)
@@ -99,7 +101,13 @@ class TCells:
             self.dir /= np.linalg.norm(self.dir, axis=1)[:, None]
             prop = self.pos + self.dir * (speed * dt_min)[:, None]
 
+            # dense matrix is a barrier: T cells are kept out of it entirely
+            blocked = ~w.fibroblasts.passable(prop)
             for k in np.where(free)[0]:
+                if blocked[k]:
+                    self.dir[k] = rng.normal(size=3)
+                    self.dir[k] /= np.linalg.norm(self.dir[k])
+                    continue
                 nb = tree.query_ball_point(prop[k], r_T[k] + rmax)
                 if nb:
                     d = np.linalg.norm(w.pos[nb] - prop[k], axis=1)

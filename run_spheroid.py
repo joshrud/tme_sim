@@ -20,6 +20,7 @@ import numpy as np
 
 from tme import params as P
 from tme.tcells import EFFECTOR, NAIVE
+from tme.fibroblasts import FRACTION as FIBRO_FRACTION
 from tme.indications import DEFAULT as DEFAULT_INDICATION, INDICATIONS
 from tme.world import World
 
@@ -32,6 +33,8 @@ ap.add_argument("--t-end", type=float, default=None, help="stop at this hour (ov
 ap.add_argument("--snap-every", type=float, default=12.0, help="hours between tumor snapshots")
 ap.add_argument("--indication", default=DEFAULT_INDICATION, choices=sorted(INDICATIONS),
                 help="tumor type: sets reference cell line, doubling time, drivers, mutation rate")
+ap.add_argument("--fibroblasts", action="store_true",
+                help="seed fibroblasts at the indication's fraction and let them deposit ECM")
 ap.add_argument("--out", default="out")
 args = ap.parse_args()
 os.makedirs(args.out, exist_ok=True)
@@ -42,6 +45,9 @@ w = World(seed=42, indication=args.indication)
 print(f"indication: {w.indication.name} (line {w.indication.line}, "
       f"doubling {w.indication.doubling_h:g} h, {w.indication.mut_per_division:.1f} mutations/division)")
 w.seed_ball(1000)
+if args.fibroblasts:
+    print(f"fibroblasts: seeded {w.seed_fibroblasts()} "
+          f"({100 * FIBRO_FRACTION[w.indication.key]:.0f}% of tumor cells)")
 snaps, rows = [], []
 t0 = time.time()
 step = 0
@@ -71,6 +77,8 @@ while not done():
                          frac_quiescent=w.quiescent.mean(),
                          median_mut=float(np.median(w.n_mut)),
                          cells_with_driver=int((w.mutations.n_drivers(w.driver_mask) > 0).sum()),
+                         fibroblasts=w.fibroblasts.n,
+                         ecm_mean=round(float(np.mean(w.fibroblasts.ecm_at(w.pos))), 4) if w.fibroblasts.ecm is not None else 0.0,
                          tcells=tc.n, t_anergic=int(np.sum(tc.state == 1)),
                          hits=ev.count("hit"), kills=ev.count("killed"),
                          min_o2_mmHg=w.fields["oxygen"].c.min(),
@@ -93,6 +101,12 @@ np.savez_compressed(
     pos=np.concatenate([x[2] for x in tr]).astype(np.float32) if tr else np.zeros((0, 3), np.float32),
     state=np.concatenate([x[3] for x in tr]).astype(np.int8) if tr else np.zeros(0, np.int8),
     info_id=w.tcells.id, info_cognate=w.tcells.cognate, info_kills=w.tcells.kills)
+fb = w.fibroblasts
+np.savez_compressed(f"{args.out}/fibroblasts.npz",
+                    pos=fb.pos.astype(np.float32), state=fb.state.astype(np.int8), id=fb.id,
+                    ecm=fb.ecm.rho if fb.ecm is not None else np.zeros((1, 1, 1), np.float32),
+                    ecm_origin=fb.ecm.origin if fb.ecm is not None else np.zeros(3),
+                    ecm_h=np.array([fb.ecm.h if fb.ecm is not None else 0.0]))
 with open(f"{args.out}/indication.txt", "w") as fh:
     fh.write(f"{w.indication.key}\t{w.indication.name}\t{w.indication.line}\n"
              f"doubling_h\t{w.indication.doubling_h}\n"
