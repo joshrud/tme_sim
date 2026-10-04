@@ -165,4 +165,6 @@ def table():
                          ("numerics", NUMERICS)]:
         for k, p in group.items():
             rows.append((gname, k, p.value, p.unit, p.status, p.source))
+    from .indications import table as indication_table
+    rows += indication_table()
     return rows

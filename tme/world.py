@@ -11,6 +11,7 @@ from scipy.sparse.linalg import cg
 from scipy.spatial import cKDTree
 
 from . import params as P
+from .indications import DEFAULT as DEFAULT_INDICATION, INDICATIONS, MutationModel
 from .tcells import TCells
 
 ALIVE, NECROTIC, APOPTOTIC = 0, 1, 2
@@ -38,8 +39,10 @@ class Field:
 class World:
     APOPTOTIC = APOPTOTIC
 
-    def __init__(self, seed=0):
+    def __init__(self, seed=0, indication=DEFAULT_INDICATION):
         self.rng = np.random.default_rng(seed)
+        self.indication = INDICATIONS[indication]
+        self.mutations = MutationModel(indication, self.rng)
         self.t = 0.0  # hours
         self.next_id = 0
         n = 0
@@ -52,6 +55,8 @@ class World:
         self.state = np.zeros(n, int)
         self.damage = np.zeros(n)       # accumulated sublethal CTL hits (decays)
         self.t_dead = np.zeros(n)       # time of apoptosis (APOPTOTIC cells)
+        self.n_mut = np.zeros(n, np.int64)      # acquired somatic mutations
+        self.driver_mask = np.zeros(n, np.int64)  # bitmask of mutated driver genes
         self.events = []              # (t, kind, id, other) - birth/death/enter/exit
         self.edges = np.zeros((0, 2), int)
         self.dist = np.zeros(0)
@@ -74,18 +79,24 @@ class World:
     def n(self):
         return len(self.id)
 
-    def _draw_cycle(self, k):
-        mean, cv = P.CYCLE_MEAN_H, P.CYCLE["cv"].value
+    def _draw_cycle(self, k, driver_mask=None):
+        """Cycle lengths (h) for k cells: indication doubling time, lognormal spread,
+        shortened slightly per acquired driver (near-neutral; see indications.py)."""
+        mean, cv = self.indication.doubling_h, P.CYCLE["cv"].value
         s = np.sqrt(np.log(1 + cv**2))
-        return self.rng.lognormal(np.log(mean) - s**2 / 2, s, k)
+        T = self.rng.lognormal(np.log(mean) - s**2 / 2, s, k)
+        if driver_mask is not None and k:
+            T = T * self.mutations.cycle_scale(driver_mask)
+        return T
 
-    def add_cells(self, pos, kind="seed", parent=-1, ctype=0, vol=None, age=None):
+    def add_cells(self, pos, kind="seed", parent=-1, ctype=0, vol=None, age=None,
+                  n_mut=None, driver_mask=None):
         """Add cells to the world (seeding, division, or immune-cell entry later)."""
         pos = np.atleast_2d(pos)
         k = len(pos)
         ids = np.arange(self.next_id, self.next_id + k)
         self.next_id += k
-        T = self._draw_cycle(k)
+        T = self._draw_cycle(k, driver_mask)
         if age is None:
             age = self.rng.uniform(0, 1, k) * T
         if vol is None:
@@ -98,6 +109,9 @@ class World:
         self.T = np.concatenate([self.T, T])
         self.state = np.concatenate([self.state, np.full(k, ALIVE)])
         self.damage = np.concatenate([self.damage, np.zeros(k)])
+        self.n_mut = np.concatenate([self.n_mut, np.zeros(k, np.int64) if n_mut is None else n_mut])
+        self.driver_mask = np.concatenate(
+            [self.driver_mask, np.zeros(k, np.int64) if driver_mask is None else driver_mask])
         self.t_dead = np.concatenate([self.t_dead, np.zeros(k)])
         parent = np.broadcast_to(parent, k)
         self.events += [(self.t, kind, int(i), int(p)) for i, p in zip(ids, parent)]
@@ -111,7 +125,8 @@ class World:
         for i in self.id[mask]:
             self.events.append((self.t, kind, int(i), -1))
         keep = ~mask
-        for a in ("id", "ctype", "pos", "vol", "age", "T", "state", "damage", "t_dead"):
+        for a in ("id", "ctype", "pos", "vol", "age", "T", "state", "damage", "t_dead",
+                  "n_mut", "driver_mask"):
             setattr(self, a, getattr(self, a)[keep])
         for f in self.fields.values():
             if f.c is not None:
@@ -269,11 +284,21 @@ class World:
             self.pos[div] -= off
             self.vol[div] = child_vol
             self.age[div] = 0.0
-            self.T[div] = self._draw_cycle(len(div))
+            # both daughters replicate the genome independently, so each draws its own mutations
+            keep_mut, keep_drv = self.mutations.on_division(
+                self.n_mut[div].copy(), self.driver_mask[div].copy())
+            new_mut, new_drv = self.mutations.on_division(
+                self.n_mut[div].copy(), self.driver_mask[div].copy())
+            gained = (keep_drv != self.driver_mask[div]) | (new_drv != self.driver_mask[div])
+            self.n_mut[div], self.driver_mask[div] = keep_mut, keep_drv
+            self.T[div] = self._draw_cycle(len(div), keep_drv)
             for p in parents:
                 self.events.append((self.t, "division", int(p), -1))
+            for i in np.where(gained)[0]:
+                self.events.append((self.t, "driver", int(parents[i]), -1))
             self.add_cells(self.pos[div] + 2 * off, kind="birth", parent=parents,
-                           vol=child_vol, age=np.zeros(len(div)))
+                           vol=child_vol, age=np.zeros(len(div)),
+                           n_mut=new_mut, driver_mask=new_drv)
 
         for _ in range(int(P.NUMERICS["mech_iters"].value)):
             self.relax()
@@ -296,4 +321,5 @@ class World:
     def snapshot(self):
         return dict(t=self.t, id=self.id.copy(), pos=self.pos.copy(), vol=self.vol.copy(),
                     phase=self.phase(), state=self.state.copy(),
+                    n_mut=self.n_mut.copy(), driver_mask=self.driver_mask.copy(),
                     **{k: f.c.copy() for k, f in self.fields.items() if f.c is not None})
