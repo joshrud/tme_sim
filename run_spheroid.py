@@ -1,6 +1,7 @@
 """Grow a HeLa spheroid and record a 3D+time trajectory, optionally with T cells entering.
 
   python run_spheroid.py                                   # tumor only, to 700 um
+  python run_spheroid.py --indication PDAC --out out/pdac  # another indication
   python run_spheroid.py --tcells naive --out out/naive    # naive T cells arrive from day 3
   python run_spheroid.py --tcells effector --out out/ctl   # activated CTLs (e.g. adoptive transfer)
 
@@ -19,6 +20,7 @@ import numpy as np
 
 from tme import params as P
 from tme.tcells import EFFECTOR, NAIVE
+from tme.indications import DEFAULT as DEFAULT_INDICATION, INDICATIONS
 from tme.world import World
 
 ap = argparse.ArgumentParser()
@@ -28,13 +30,17 @@ ap.add_argument("--t-start", type=float, default=72.0, help="hour T cells start 
 ap.add_argument("--t-rate", type=float, default=10.0, help="T cells arriving per hour")
 ap.add_argument("--t-end", type=float, default=None, help="stop at this hour (overrides diameter)")
 ap.add_argument("--snap-every", type=float, default=12.0, help="hours between tumor snapshots")
+ap.add_argument("--indication", default=DEFAULT_INDICATION, choices=sorted(INDICATIONS),
+                help="tumor type: sets reference cell line, doubling time, drivers, mutation rate")
 ap.add_argument("--out", default="out")
 args = ap.parse_args()
 os.makedirs(args.out, exist_ok=True)
 
 dt = P.NUMERICS["dt"].value
 snap_steps = max(1, round(args.snap_every / dt))
-w = World(seed=42)
+w = World(seed=42, indication=args.indication)
+print(f"indication: {w.indication.name} (line {w.indication.line}, "
+      f"doubling {w.indication.doubling_h:g} h, {w.indication.mut_per_division:.1f} mutations/division)")
 w.seed_ball(1000)
 snaps, rows = [], []
 t0 = time.time()
@@ -63,6 +69,8 @@ while not done():
                          frac_G1=np.mean(ph == 0), frac_SG2M=np.mean(ph == 1),
                          frac_necrotic=np.mean(ph == -1), frac_apoptotic=np.mean(ph == -2),
                          frac_quiescent=w.quiescent.mean(),
+                         median_mut=float(np.median(w.n_mut)),
+                         cells_with_driver=int((w.mutations.n_drivers(w.driver_mask) > 0).sum()),
                          tcells=tc.n, t_anergic=int(np.sum(tc.state == 1)),
                          hits=ev.count("hit"), kills=ev.count("killed"),
                          min_o2_mmHg=w.fields["oxygen"].c.min(),
@@ -85,6 +93,12 @@ np.savez_compressed(
     pos=np.concatenate([x[2] for x in tr]).astype(np.float32) if tr else np.zeros((0, 3), np.float32),
     state=np.concatenate([x[3] for x in tr]).astype(np.int8) if tr else np.zeros(0, np.int8),
     info_id=w.tcells.id, info_cognate=w.tcells.cognate, info_kills=w.tcells.kills)
+with open(f"{args.out}/indication.txt", "w") as fh:
+    fh.write(f"{w.indication.key}\t{w.indication.name}\t{w.indication.line}\n"
+             f"doubling_h\t{w.indication.doubling_h}\n"
+             f"mut_per_division\t{w.indication.mut_per_division:.2f}\n"
+             f"truncal\t{','.join(w.indication.truncal)}\n"
+             f"sources\t{w.indication.sources}\n")
 with open(f"{args.out}/log.csv", "w", newline="") as fh:
     wr = csv.DictWriter(fh, fieldnames=rows[0].keys())
     wr.writeheader()
