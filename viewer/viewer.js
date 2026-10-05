@@ -322,7 +322,13 @@ const smooth = new SmoothTissueRenderer(renderer);
 // ------------------------------------------------------------------ T cells
 // White cells with a big "T" turned toward the viewer; the letter's color shows the state.
 const T_STATE = { 0: { name: "naive", letter: "#1f2328" }, 1: { name: "anergic", letter: "#8c959f" },
-                  3: { name: "effector CTL", letter: "#cf222e" } };
+                  3: { name: "effector CTL", letter: "#cf222e" },
+                  4: { name: "leaving tissue", letter: "#6e7681" } };  // EXITED
+// A T cell's recorded state and its logged exit time come from different cadences (tracks every
+// 2 min, events exactly), so a cell can briefly read as EXITED while still drawn. Every lookup
+// must therefore be total - a missing entry used to throw inside the render loop.
+const tState = (st) => T_STATE[st] || T_STATE[0];
+const tRadius = (st) => T_RADIUS[st] || T_RADIUS[0];
 const T_RADIUS = { 0: 4.0, 1: 4.0, 3: 4.0 * Math.cbrt(3), 4: 4.0 };  // 4 = exited  // 8 um naive; activated blasts ~3x volume
 const ENTER_MS = 1400, HIT_MS = 1000;  // wall-clock length of the entry and perforin/granzyme animations
 
@@ -405,7 +411,7 @@ function updateT(now) {
     if (p !== undefined) x = side + (x - side) * (1 - (1 - p) ** 3);  // fly in from the +x side
     if (pe !== undefined) x = x + (side - x) * pe ** 2;               // and back out when leaving
     tcur.dx[i] = x; tcur.dy[i] = tcur.y[i]; tcur.dz[i] = tcur.z[i];
-    const st = tcur.state[i] === 4 ? 0 : tcur.state[i], mesh = tMeshes[st];
+    const st = tMeshes[tcur.state[i]] ? tcur.state[i] : 0, mesh = tMeshes[st];
     dummy.position.set(x, tcur.y[i], tcur.z[i]);
     dummy.scale.setScalar(T_RADIUS[st]);
     dummy.lookAt(camera.position);  // keep the "T" facing the viewer
@@ -432,9 +438,13 @@ scene.add(granules);
 function updateGranules(now) {
   anims.hit = anims.hit.filter((a) => now - a.start < HIT_MS);
   const bursts = anims.hit.map((a) => [a.q, (now - a.start) / HIT_MS]);
-  if (!ui.playing) {  // paused: show hits within ~3 min of the current time, mid-flight
-    const H = tc.hits;
-    for (let q = 0; q < H.n && bursts.length < MAX_BURSTS; q++) if (Math.abs(H.t[q] - ui.t) < 0.05) bursts.push([q, 0.5]);
+  if (!ui.playing && tc.hits.n) {
+    // Paused: show hits within ~3 min of the current time. Hit times are sorted, so binary
+    // search the window instead of scanning all of them (this run has 172k) every frame.
+    const H = tc.hits, w = 0.05;
+    let lo = 0, hi = H.n;
+    while (lo < hi) { const mid = (lo + hi) >> 1; if (H.t[mid] < ui.t - w) lo = mid + 1; else hi = mid; }
+    for (let q = lo; q < H.n && H.t[q] <= ui.t + w && bursts.length < MAX_BURSTS; q++) bursts.push([q, 0.5]);
   }
   const P = granGeo.attributes.position.array;
   let n = 0;
@@ -516,7 +526,7 @@ function updateMarker() {  // follows the selected tumor cell or T cell
   if (ti >= 0) {
     marker.visible = !!tcur.vis[ti];
     marker.position.set(tcur.dx[ti], tcur.dy[ti], tcur.dz[ti]);
-    marker.scale.setScalar(T_RADIUS[tcur.state[ti]] * 1.5);
+    marker.scale.setScalar(tRadius(tcur.state[ti]) * 1.5);
     return;
   }
   const s = ui.selected >= 0 ? findCur(ui.selected) : -1;
@@ -581,13 +591,13 @@ function drawSection() {
   xctx.lineWidth = 2;
   for (let i = 0; i < tc.n; i++) {  // T cells: white discs, outlined in their letter color
     if (!tcur.vis[i]) continue;
-    const d = tw[i] - ui.slice, r = T_RADIUS[tcur.state[i]];
+    const d = tw[i] - ui.slice, r = tRadius(tcur.state[i]);
     if (d > r || d < -r) continue;
     xctx.beginPath();
     xctx.arc(W / 2 + tu[i] * s, W / 2 - tv[i] * s, Math.max(Math.sqrt(r * r - d * d) * s, 1.5), 0, 2 * Math.PI);
     xctx.fillStyle = "#ffffff";
     xctx.fill();
-    xctx.strokeStyle = T_STATE[tcur.state[i]].letter;
+    xctx.strokeStyle = tState(tcur.state[i]).letter;
     xctx.stroke();
   }
   xctx.fillStyle = "#e6edf3";
@@ -627,7 +637,7 @@ function pick(clientX, clientY) {  // -> { kind: "tumor", id } | { kind: "t", i 
     test(cur.x[i], cur.y[i], cur.z[i], r, { kind: "tumor", id: cur.id[i] });
   }
   for (let i = 0; i < tc.n; i++) {
-    if (tcur.vis[i]) test(tcur.dx[i], tcur.dy[i], tcur.dz[i], T_RADIUS[tcur.state[i]], { kind: "t", i });
+    if (tcur.vis[i]) test(tcur.dx[i], tcur.dy[i], tcur.dz[i], tRadius(tcur.state[i]), { kind: "t", i });
   }
   return best;
 }
@@ -672,7 +682,7 @@ function updateCloneCount() {  // live numbers in the selection panel
     for (let q = 0; q < H.n && H.t[q] <= ui.t; q++) h += H.tcell[q] === i;
     for (let q = 0; q < D.n; q++) kills += D.killer[q] === i && D.tk[q] <= ui.t;
     if ($("thits")) { $("thits").textContent = h; $("tkills").textContent = kills; }
-    if ($("tstate")) $("tstate").textContent = tcur.vis[i] ? T_STATE[tcur.state[i]].name
+    if ($("tstate")) $("tstate").textContent = tcur.vis[i] ? tState(tcur.state[i]).name
       : ui.t >= tc.exit[i] ? `left the tissue at ${tc.exit[i].toFixed(1)} h` : "not yet entered";
     return;
   }
@@ -708,10 +718,15 @@ function setTime(t) {
   ui.dirty = true;
 }
 time.oninput = () => setTime(+time.value);
+function setPlaying(on) {
+  ui.playing = on;
+  $("play").textContent = on ? "❚❚ Pause" : "▶ Play";
+}
 $("play").onclick = () => {
-  if (ui.t >= T1) setTime(T0);
-  ui.playing = !ui.playing;
-  $("play").textContent = ui.playing ? "❚❚ Pause" : "▶ Play";
+  // Only rewind when starting playback from the very end. Previously any click at the end
+  // rewound, so a user pausing right as the timeline finished was thrown back to the start.
+  if (!ui.playing && ui.t >= T1 - 1e-6) setTime(T0);
+  setPlaying(!ui.playing);
 };
 // log-scale speed: 0.05 h/s (3 min of biology per second, to watch mitosis) to 48 h/s
 const SPEED_MIN = 0.05, SPEED_MAX = 48;
@@ -780,8 +795,7 @@ $("record").onclick = () => {
   rec.recorder.start();
   $("record").textContent = "■ Stop & save";
   setTime(T0);
-  ui.playing = true;
-  $("play").textContent = "❚❚ Pause";
+  setPlaying(true);
 };
 
 // ------------------------------------------------------------------ loop
@@ -836,8 +850,35 @@ if (organs) {
     `${organs.precursor_frequency.toExponential(0)} of repertoire`;
 }
 
+// A lost GPU context (driver reset, memory pressure, backgrounding) otherwise leaves a dead
+// black canvas with no explanation. Catch it, stop the loop cleanly, and say so.
+let contextLost = false;
+renderer.domElement.addEventListener("webglcontextlost", (e) => {
+  e.preventDefault();
+  contextLost = true;
+  setPlaying(false);
+  showBanner("The 3D context was lost (usually GPU memory pressure). Reload to restore it.");
+});
+renderer.domElement.addEventListener("webglcontextrestored", () => {
+  contextLost = false;
+  showBanner("");
+  ui.dirty = true;
+});
+
+function showBanner(msg) {
+  let el = $("banner");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "banner";
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+  el.style.display = msg ? "block" : "none";
+}
+
 let last = performance.now();
 function loop(now) {
+  if (contextLost) { requestAnimationFrame(loop); return; }
   const dt = Math.min((now - last) / 1000, 0.1);
   last = now;
   if (ui.playing) {
@@ -845,11 +886,11 @@ function loop(now) {
     setTime(ui.t + dt * ui.speed);
     triggerEvents(prev, ui.t);
     if (ui.t >= T1) {
-      ui.playing = false;
-      $("play").textContent = "▶ Play";
+      setPlaying(false);
       if (rec.recorder) setTimeout(() => rec.recorder && rec.recorder.stop(), 300);
     }
   }
+  try {
   if (ui.dirty) {
     computeState(ui.t);
     computeT(ui.t);
@@ -872,6 +913,11 @@ function loop(now) {
   updateT(now);
   updateGranules(now);
   updateMarker();
+  } catch (err) {
+    setPlaying(false);
+    showBanner(`Viewer error: ${err.message}. Playback stopped; reload to recover.`);
+    console.error(err);
+  }
   cellUniforms.uTime.value = now / 1000;
   if (ui.style === "smooth") {
     smooth.render(scene, camera, [cells, dividing], { smoothing: ui.smoothing, opacity: ui.opacity,
