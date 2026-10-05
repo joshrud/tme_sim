@@ -11,6 +11,8 @@ from scipy.sparse.linalg import cg
 from scipy.spatial import cKDTree
 
 from . import params as P
+from .fibroblasts import FRACTION as FIBRO_FRACTION, Fibroblasts
+from .immune import ImmuneCells
 from .indications import DEFAULT as DEFAULT_INDICATION, INDICATIONS, MutationModel
 from .tcells import TCells
 
@@ -62,6 +64,8 @@ class World:
         self.dist = np.zeros(0)
 
         self.tcells = TCells(self)
+        self.fibroblasts = Fibroblasts(self)
+        self.immune = ImmuneCells(self)
         o, g, l, m = P.OXYGEN, P.GLUCOSE, P.LACTATE, P.MITOGEN
         # oxygen in mmHg: amount/s -> mmHg*L/s via solubility
         self.fields = {
@@ -131,6 +135,18 @@ class World:
         for f in self.fields.values():
             if f.c is not None:
                 f.c = f.c[keep]
+
+    def seed_immune(self, cd8_cells=True):
+        """Procedurally generate this indication's immune compartment (see immune.py)."""
+        return self.immune.seed(cd8_cells=cd8_cells)
+
+    def seed_fibroblasts(self, fraction=None):
+        """Seed fibroblasts at the indication's fraction of current tumor cells."""
+        f = FIBRO_FRACTION[self.indication.key] if fraction is None else fraction
+        k = int(round(self.n * f))
+        if k:
+            self.fibroblasts.seed(k)
+        return k
 
     def seed_ball(self, n_cells):
         """Random cluster of n cells, like a freshly aggregated spheroid."""
@@ -303,7 +319,9 @@ class World:
         for _ in range(int(P.NUMERICS["mech_iters"].value)):
             self.relax()
 
-        # T cells move and act over this step; killed cells are cleared after a delay
+        # fibroblasts deposit matrix, then immune cells move through it
+        self.fibroblasts.step(dt)
+        self.immune.step(dt)
         self.tcells.step(dt)
         gone = (self.state == APOPTOTIC) & (self.t + dt >= self.t_dead + P.TCELL["apoptotic_clearance"].value)
         if gone.any():

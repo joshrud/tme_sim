@@ -69,3 +69,53 @@
 | indication | CESC.doubling_h | 20.1 | h | **measured** | median of Cellosaurus-reported values for HeLa (range 20.1-48 h) |
 | indication | CESC.tumor_factor | 10.0 | - | **assumption** | placed in the Werner 2020 4-100x range using relative TMB |
 | indication | CESC.mut_per_division | 11.4 | mutations/division | **derived** | 1.14 * tumor_factor, Werner et al. 2020 |
+| fibroblast | diameter | 15.0 | um | **assumption** | modeled as a sphere of roughly tumor-cell volume |
+| fibroblast | speed | 10.0 | um/h | **proxy** | human fibroblasts in 3D collagen I, Hakkinen et al. 2011 doi:10.1089/ten.tea.2010.0273; normal fibroblasts, not CAFs |
+| fibroblast | division_h | 120.0 | h | **assumption** | CAF turnover in tumors; no direct measurement found |
+| fibroblast | myCAF_radius | 50.0 | um | **assumption** | distance to tumor within which a fibroblast is myCAF (TGF-beta proxy) |
+| fibroblast | margin | 250.0 | um | **assumption** | fibroblasts stay within this distance of the tumor edge; CAFs are tissue-resident and do not disperse like circulating cells |
+| fibroblast | ecm_voxel | 20.0 | um | **numerical** | ECM grid spacing, ~1.3 cell diameters |
+| fibroblast | ecm_radius | 30.0 | um | **assumption** | matrix is deposited locally around the cell |
+| fibroblast | ecm_deposit | 0.0012 | 1/h | **calibrated** | density added per voxel per hour by a myCAF; set so the PDAC tumor edge reaches 0.72 density at 7 days (>0.7 target; desmoplasia, Whatcott 2015 / Erkan 2008). The same rate for every indication: ordering comes from fibroblast number alone |
+| fibroblast | ecm_icaf_scale | 0.3 | - | **assumption** | iCAFs deposit less matrix than myCAFs |
+| fibroblast | ecm_decay | 0.002 | 1/h | **assumption** | slow turnover; MMP activity not modeled |
+| fibroblast | ecm_barrier | 0.6 | - | **assumption** | T cells cannot move into matrix denser than this. Salmon et al. 2012 report that aligned dense fibers restrict T cells from entering tumor islets; a speed penalty alone reproduces the opposite (slower cells dwell near tumor and kill more) |
+| fibroblast | ecm_block | 0.8 | - | **assumption** | fraction of T-cell speed lost in fully dense matrix; the effect is measured (Salmon et al. 2012 doi:10.1172/JCI45817), this functional form is not |
+| fibroblast | fraction.PDAC | 0.35 | - | **assumption** | fraction of all cells that are fibroblasts; ordering supported, value is not |
+| fibroblast | fraction.OV | 0.15 | - | **assumption** | fraction of all cells that are fibroblasts; ordering supported, value is not |
+| fibroblast | fraction.BRCA | 0.15 | - | **assumption** | fraction of all cells that are fibroblasts; ordering supported, value is not |
+| fibroblast | fraction.LUAD | 0.1 | - | **assumption** | fraction of all cells that are fibroblasts; ordering supported, value is not |
+| fibroblast | fraction.CESC | 0.1 | - | **assumption** | fraction of all cells that are fibroblasts; ordering supported, value is not |
+| immune | macrophage.radius | 8.0 | um | **assumption** | macrophages are large; modelled as a sphere |
+| immune | macrophage.speed | 2.0 | um/min | **assumption** | slower than T cells, faster than fibroblasts |
+| immune | macrophage.lifespan | 480.0 | h | **assumption** | TAMs are long-lived; no clean human tumour figure |
+| immune | macrophage.suppress | 0.5 | - | **assumption** | local reduction of CD8 killing; phenomenological |
+| immune | dendritic.radius | 7.0 | um | **assumption** | dendritic cell body |
+| immune | dendritic.speed | 3.0 | um/min | **assumption** | placeholder |
+| immune | dendritic.lifespan | 168.0 | h | **assumption** | placeholder |
+| immune | dendritic.suppress | 0.0 | - | **assumption** | local reduction of CD8 killing; phenomenological |
+| immune | NK.radius | 5.0 | um | **assumption** | lymphocyte-sized |
+| immune | NK.speed | 6.0 | um/min | **assumption** | lymphocyte-like, slower than T cells |
+| immune | NK.lifespan | 168.0 | h | **assumption** | placeholder |
+| immune | NK.suppress | 0.0 | - | **assumption** | local reduction of CD8 killing; phenomenological |
+| immune | B cell.radius | 5.0 | um | **measured** | resting lymphocyte 8-11 um diameter, BioNumbers 108368 |
+| immune | B cell.speed | 6.0 | um/min | **proxy** | B-cell motility coefficient ~1/5 of T cells in lymph node, Miller et al. 2002 doi:10.1126/science.1070051 |
+| immune | B cell.lifespan | 168.0 | h | **assumption** | placeholder |
+| immune | B cell.suppress | 0.0 | - | **assumption** | local reduction of CD8 killing; phenomenological |
+| immune | Treg.radius | 4.0 | um | **measured** | resting lymphocyte, BioNumbers 108368 |
+| immune | Treg.speed | 8.0 | um/min | **proxy** | T-cell-like motility |
+| immune | Treg.lifespan | 336.0 | h | **assumption** | placeholder |
+| immune | Treg.suppress | 0.8 | - | **assumption** | local reduction of CD8 killing; phenomenological |
+| immune | neutrophil.radius | 5.0 | um | **assumption** | granulocyte |
+| immune | neutrophil.speed | 12.0 | um/min | **assumption** | fast-migrating myeloid cell |
+| immune | neutrophil.lifespan | 24.0 | h | **proxy** | short circulating lifespan; tumour neutrophils live longer |
+| immune | neutrophil.suppress | 0.3 | - | **assumption** | local reduction of CD8 killing; phenomenological |
+| immune | monocyte.marrow_delay | 38.400000000000006 | h | **measured** | postmitotic interval before classical monocytes leave marrow, Patel et al. 2017 doi:10.1084/jem.20170355 |
+| immune | monocyte.circulating | 24.0 | h | **measured** | classical monocytes circulate ~1 day, Patel et al. 2017 |
+| immune | monocyte.to_tam | 24.0 | h | **assumption** | time in tissue before becoming a TAM |
+| immune | suppression_radius | 40.0 | um | **assumption** | distance over which a Treg or TAM suppresses CD8 killing |
+| immune | PDAC.leukocyte_fraction | 0.12 | - | **assumption** | immune cells per tumour cell; phenotype 'excluded'; reproduces published ordering, not a measurement |
+| immune | LUAD.leukocyte_fraction | 0.3 | - | **assumption** | immune cells per tumour cell; phenotype 'inflamed'; reproduces published ordering, not a measurement |
+| immune | OV.leukocyte_fraction | 0.2 | - | **assumption** | immune cells per tumour cell; phenotype 'moderate'; reproduces published ordering, not a measurement |
+| immune | BRCA.leukocyte_fraction | 0.22 | - | **assumption** | immune cells per tumour cell; phenotype 'variable'; reproduces published ordering, not a measurement |
+| immune | CESC.leukocyte_fraction | 0.2 | - | **assumption** | immune cells per tumour cell; phenotype 'moderate'; reproduces published ordering, not a measurement |
