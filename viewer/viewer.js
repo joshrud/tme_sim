@@ -456,12 +456,24 @@ function updateGranules(now) {
   granGeo.attributes.position.needsUpdate = true;
 }
 
-// translucent plane showing where the cross-section is taken
+// Plane showing where the cross-section is taken. Deliberately much larger than the tumour
+// so it reads as an infinite cutting plane running off screen, and in a warm colour that no
+// cell type uses (cells are red/green/yellow/purple/white/olive) so it stays legible.
+const PLANE_SPAN = 12;                       // multiples of the tumour radius
+const PLANE_COLOR = 0xff8c42;
+const planeSize = PLANE_SPAN * 2 * extent;
 const planeMesh = new THREE.Mesh(
-  new THREE.PlaneGeometry(2 * extent, 2 * extent),
-  new THREE.MeshBasicMaterial({ color: 0x58a6ff, transparent: true, opacity: 0.12, side: THREE.DoubleSide, depthWrite: false }));
-planeMesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(planeMesh.geometry),
-  new THREE.LineBasicMaterial({ color: 0x58a6ff })));
+  new THREE.PlaneGeometry(planeSize, planeSize),
+  new THREE.MeshBasicMaterial({ color: PLANE_COLOR, transparent: true, opacity: 0.16,
+                                side: THREE.DoubleSide, depthWrite: false }));
+planeMesh.renderOrder = 997;
+// a bright grid on the plane makes its orientation and position readable at a glance
+const planeGrid = new THREE.GridHelper(planeSize, PLANE_SPAN * 8, PLANE_COLOR, PLANE_COLOR);
+planeGrid.material.transparent = true;
+planeGrid.material.opacity = 0.35;
+planeGrid.material.depthWrite = false;
+planeGrid.rotation.x = Math.PI / 2;          // GridHelper lies in XZ; the plane is XY
+planeMesh.add(planeGrid);
 scene.add(planeMesh);
 
 // ring marking the selected cell
@@ -717,6 +729,7 @@ $("opacity").oninput = (e) => {
 $("style").onchange = (e) => { ui.style = e.target.value; $("smoothRow").hidden = ui.style !== "smooth"; };
 $("smoothing").oninput = (e) => { ui.smoothing = +e.target.value; $("smval").textContent = `${ui.smoothing} µm`; };
 $("wobble").onchange = (e) => { cellUniforms.uWobble.value = e.target.checked ? 0.035 : 0; };
+$("showPlane").onchange = (e) => { planeMesh.visible = e.target.checked; };
 $("showStroma").onchange = (e) => {
   if (fibMesh) fibMesh.visible = e.target.checked;
   if (immMesh) immMesh.visible = e.target.checked;

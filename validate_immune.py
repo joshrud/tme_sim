@@ -64,6 +64,8 @@ for label, with_dc in [("with DCs/B cells", True), ("no APCs (control)", False)]
     w.solve_fields()
     if with_dc:
         w.seed_immune(cd8_cells=False)
+    else:
+        w.immune.recruiting = False      # a genuine APC-free control
     w.tcells.enter(200, NAIVE, 1.0)   # all cognate, to isolate the priming effect
     for _ in range(96):               # 24 h
         w.step()
@@ -81,6 +83,8 @@ for label, suppressors in [("with Tregs + TAMs", True), ("no suppressors (contro
         w.solve_fields()
         if suppressors:
             w.seed_immune(cd8_cells=False)
+        else:
+            w.immune.recruiting = False  # a genuine suppressor-free control
         w.tcells.enter(150, EFFECTOR, 1.0)
         for _ in range(96):
             w.step()

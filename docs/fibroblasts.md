@@ -110,14 +110,28 @@ so a T cell is slowed in moderate matrix and **cannot enter** matrix denser than
 
 > **Why the barrier is necessary — a correction found by validation.** The first implementation had the speed
 > penalty only. It produced the *opposite* of the published biology: slowing T cells made them linger near tumor
-> cells, so contacts rose and killing nearly doubled (459 vs 238 kills). The documented mechanism is not drag but
-> **restriction** — Salmon et al. report that aligned dense fibers *restrict T cells from entering tumor islets*,
-> so they accumulate in stroma instead [12]. With the barrier added, the model reproduces exclusion: in PDAC after
-> 7 days of matrix build-up, stroma cuts T-cell contacts by **38%** and kills by **9%** versus a fibroblast-free
-> control. The *form* of both rules is an assumption; the *existence and direction* of the effect is measured [12].
+> cells, so contacts rose and killing nearly doubled. The documented mechanism is not drag but **restriction** —
+> Salmon et al. report that aligned dense fibers *restrict T cells from entering tumor islets*, so they accumulate
+> in stroma instead [12]. The *form* of both rules is an assumption; the *existence and direction* of the effect
+> is measured [12].
 
-The weaker effect on kills than on contacts is expected: killing needs ~3 hits inside the damage-recovery window,
-so a moderate drop in contact rate does not translate proportionally into a drop in kills.
+**What the barrier does and does not reproduce** (PDAC, 7 days of matrix build-up, then 150 CTLs enter;
+3 seeds, immune recruitment disabled so the matrix effect is isolated):
+
+| | T-cell contacts | Kills |
+|---|---|---|
+| No fibroblasts (control) | 1,856 | 198.7 ± 11.9 |
+| With fibroblasts | 1,257 | 203.3 ± 18.2 |
+| | **−32%** | **no significant change** |
+
+So the model reproduces **spatial exclusion** — a third fewer tumour contacts — but **not** a reduction in killing
+at this CTL dose. That is an honest negative result rather than a success: killing needs ~3 hits inside the
+damage-recovery window, and with 150 effectors over 24 h there are still enough contacts to reach that threshold
+in the accessible rim.
+
+> An earlier version of this document reported a 9% kill reduction. That came from a **single seed** and did not
+> survive replication across three seeds; the effect on kills is within noise. Reducing killing would require
+> either a lower effector dose, or matrix that also shields the tumour interior rather than only gating entry.
 
 ---
 

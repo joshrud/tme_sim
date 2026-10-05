@@ -126,6 +126,9 @@ class ImmuneCells:
         self.born = np.zeros(0)
         self.tracks = []
         self._next_track = 0.0
+        self._trees = {}        # cached KD-trees, invalidated whenever positions change
+        self._version = 0
+        self.recruiting = True  # set False for APC-free / suppressor-free control runs
 
     @property
     def n(self):
@@ -200,6 +203,7 @@ class ImmuneCells:
         # stagger birth times so the population does not die synchronously
         life = TYPES[kind]["lifespan"].value
         self.born = np.r_[self.born, w.t - rng.uniform(0, life, k)]
+        self._version += 1
         w.events += [(w.t, f"enter_{NAMES[kind]}", int(i), -1) for i in ids]
         return ids
 
@@ -215,6 +219,8 @@ class ImmuneCells:
         Keeps short-lived populations (neutrophils live 24 h) present instead of letting the
         compartment decay away. The target scales with tumour size, so recruitment tracks growth.
         """
+        if not self.recruiting:
+            return
         w, rng = self.w, self.w.rng
         comp = COMPOSITION[w.indication.key]
         total = w.n * comp["leukocyte"]
@@ -264,13 +270,27 @@ class ImmuneCells:
             u = off[out] / d[out][:, None]
             self.pos[out] = c + u * R_out
             self.dir[out] = -u
+        self._version += 1       # cells moved: cached trees are stale
         self._record()
 
     def _keep(self, mask):
         for a in ("id", "pos", "dir", "kind", "born"):
             setattr(self, a, getattr(self, a)[mask])
+        self._version += 1
 
     # ------------------------------------------------------------------ effects
+    def _tree(self, key, mask):
+        """KD-tree over a subset, cached until the population moves or changes.
+
+        Without this a tree was rebuilt over every immune cell on each individual CTL hit,
+        which dominated the step at large cell counts.
+        """
+        hit = self._trees.get(key)
+        if hit is None or hit[0] != self._version:
+            pts = self.pos[mask]
+            self._trees[key] = (self._version, cKDTree(pts) if len(pts) else None)
+        return self._trees[key][1]
+
     def suppression_at(self, pos):
         """Multiplier in [0, 1] on CD8 killing from nearby suppressive cells.
 
@@ -284,7 +304,9 @@ class ImmuneCells:
         sup = strength > 0
         if not sup.any():
             return np.ones(len(pos))
-        tree = cKDTree(self.pos[sup])
+        tree = self._tree("suppress", sup)
+        if tree is None:
+            return np.ones(len(pos))
         s = strength[sup]
         near = tree.query_ball_point(pos, SUPPRESSION_RADIUS.value)
         return np.array([float(np.clip(1.0 - s[nb].sum() * 0.25, 0.0, 1.0)) if nb else 1.0
@@ -296,8 +318,11 @@ class ImmuneCells:
         apc = np.array([TYPES[k]["presents"] for k in self.kind]) if self.n else np.zeros(0, bool)
         if not apc.any() or len(pos) == 0:
             return np.zeros(len(pos), bool)
-        tree = cKDTree(self.pos[apc])
-        return np.array([len(nb) > 0 for nb in tree.query_ball_point(pos, radius)])
+        tree = self._tree("apc", apc)
+        if tree is None:
+            return np.zeros(len(pos), bool)
+        d, _ = tree.query(pos, k=1, workers=-1)   # nearest APC is enough for a radius test
+        return np.atleast_1d(d) < radius
 
     def dcs_leaving(self, hours):
         """Antigen-loaded DCs that depart for the draining lymph node this step."""

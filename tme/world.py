@@ -7,7 +7,7 @@ exchange with the surrounding medium through each cell's free surface.
 import numpy as np
 import scipy.sparse as sp
 from scipy import ndimage
-from scipy.sparse.linalg import cg
+from scipy.sparse.linalg import LinearOperator, cg
 from scipy.spatial import cKDTree
 
 from . import params as P
@@ -15,6 +15,7 @@ from .fibroblasts import FRACTION as FIBRO_FRACTION, Fibroblasts
 from .immune import ImmuneCells
 from .organs import LymphoidSystem
 from .indications import DEFAULT as DEFAULT_INDICATION, INDICATIONS, MutationModel
+from .kernels import HAVE_NUMBA, edge_lengths, relax_forces, warmup
 from .tcells import TCells
 
 ALIVE, NECROTIC, APOPTOTIC = 0, 1, 2
@@ -63,6 +64,8 @@ class World:
         self.events = []              # (t, kind, id, other) - birth/death/enter/exit
         self.edges = np.zeros((0, 2), int)
         self.dist = np.zeros(0)
+        self._dx = None            # reused force buffer for the relaxation kernel
+        warmup()                   # compile the kernels before any timed step
 
         self.tcells = TCells(self)
         self.fibroblasts = Fibroblasts(self)
@@ -170,31 +173,38 @@ class World:
         tree = cKDTree(self.pos)
         pairs = tree.query_pairs(2 * tol * r.max(), output_type="ndarray")
         if len(pairs) == 0:
-            self.edges, self.dist = np.zeros((0, 2), int), np.zeros(0)
+            self.edges = np.zeros((0, 2), np.int64)
+            self.dist = np.zeros(0)
             return
         i, j = pairs[:, 0], pairs[:, 1]
         d = np.linalg.norm(self.pos[i] - self.pos[j], axis=1)
         touch = d < tol * (r[i] + r[j])
-        self.edges, self.dist = pairs[touch], d[touch]
+        self.edges = np.ascontiguousarray(pairs[touch], dtype=np.int64)
+        self.dist = d[touch]
 
     def degree(self):
         return np.bincount(self.edges.ravel(), minlength=self.n)
 
     # ------------------------------------------------------------ mechanics
-    def relax(self):
-        """One overlap-relaxation pass: push overlapping cells apart, pull near ones in."""
-        self.build_graph()
+    def relax(self, rebuild=True):
+        """One overlap-relaxation pass: push overlapping cells apart, pull near ones in.
+
+        `rebuild=False` reuses the existing edge list and only recomputes distances. Relaxation
+        moves cells by a fraction of their overlap, so the set of touching neighbours barely
+        changes between iterations - rebuilding the KD-tree every pass is the dominant cost
+        and buys nothing.
+        """
+        if rebuild or len(self.edges) == 0:
+            self.build_graph()
+        elif len(self.edges):
+            self.dist = edge_lengths(self.pos, self.edges, np.empty(len(self.edges)))
+        if len(self.edges) == 0:
+            return
         r = radius(self.vol)
-        i, j = self.edges[:, 0], self.edges[:, 1]
-        rest = P.NUMERICS["packing"].value * (r[i] + r[j])
-        d = np.maximum(self.dist, 1e-6)
-        u = (self.pos[j] - self.pos[i]) / d[:, None]
-        gap = d - rest  # <0 overlap
-        frac = np.where(gap < 0, P.NUMERICS["repulsion"].value, P.NUMERICS["adhesion"].value)
-        disp = (0.5 * frac * gap)[:, None] * u  # move i toward j by this (away if overlap)
-        dx = np.zeros_like(self.pos)
-        for ax in range(3):
-            dx[:, ax] += np.bincount(i, disp[:, ax], self.n) - np.bincount(j, disp[:, ax], self.n)
+        if self._dx is None or len(self._dx) != self.n:
+            self._dx = np.zeros((self.n, 3))
+        dx = relax_forces(self.pos, r, self.edges, P.NUMERICS["packing"].value,
+                          P.NUMERICS["repulsion"].value, P.NUMERICS["adhesion"].value, self._dx)
         self.pos += dx
 
     # ------------------------------------------------------------ fields
@@ -235,17 +245,23 @@ class World:
         self.surface = surface
         alive = self.state == ALIVE
 
+        rtol = P.NUMERICS["field_rtol"].value
+        picard_tol = P.NUMERICS["picard_tol"].value
+        max_picard = int(P.NUMERICS["picard_max"].value)
         for f in self.fields.values():
             g = f.D * kappa / self.dist**2                           # 1/s per edge
             gb = surface * 2 * f.D / h**2                            # 1/s to medium
-            L = sp.coo_matrix((np.r_[-g, -g], (np.r_[i, j], np.r_[j, i])), shape=(n, n)).tocsr()
             diag0 = np.bincount(i, g, n) + np.bincount(j, g, n) + gb
+            # Off-diagonal part is fixed for this field; the diagonal changes every Picard
+            # iteration, so apply it as A@x = L@x + d*x instead of rebuilding the matrix.
+            L = sp.coo_matrix((np.r_[-g, -g], (np.r_[i, j], np.r_[j, i])), shape=(n, n)).tocsr()
             src = np.zeros(n)
             if f.name == "lactate":
                 src = np.where(alive, P.LACTATE["per_glucose"].value
                                * self.fields["glucose"].uptake / V, 0.0)
             c = np.full(n, f.bath) if f.c is None or len(f.c) != n else f.c.copy()
-            for _ in range(6 if f.vmax else 1):  # Picard iterations for Michaelis-Menten
+            scale = max(abs(f.bath), 1e-12)
+            for _ in range(max_picard if f.vmax else 1):
                 k = np.zeros(n)
                 if f.vmax:
                     k = f.vmax / V / (f.Km + np.maximum(c, 0))
@@ -253,8 +269,13 @@ class World:
                     k = np.full(n, f.k1)
                 k = np.where(alive, k, 0.0)
                 d = diag0 + k
-                A = L + sp.diags(d)  # symmetric positive definite -> CG, warm-started
-                c, _ = cg(A, gb * f.bath + src, x0=c, rtol=1e-8, M=sp.diags(1 / d))
+                A = LinearOperator((n, n), matvec=lambda x, d=d: L @ x + d * x, dtype=float)
+                M = LinearOperator((n, n), matvec=lambda x, d=d: x / d, dtype=float)
+                prev = c
+                c, _ = cg(A, gb * f.bath + src, x0=c, rtol=rtol, M=M)  # SPD -> CG
+                # stop once the nonlinear iteration has settled; warm starts usually converge fast
+                if np.max(np.abs(c - prev)) / scale < picard_tol:
+                    break
             f.c = c
             if f.vmax:
                 f.uptake = np.where(alive, f.vmax * c / (f.Km + np.maximum(c, 0)), 0.0)
@@ -318,8 +339,10 @@ class World:
                            vol=child_vol, age=np.zeros(len(div)),
                            n_mut=new_mut, driver_mask=new_drv)
 
-        for _ in range(int(P.NUMERICS["mech_iters"].value)):
-            self.relax()
+        # rebuild the contact graph every `graph_every` passes; distances are refreshed each pass
+        every = max(int(P.NUMERICS["graph_every"].value), 1)
+        for it in range(int(P.NUMERICS["mech_iters"].value)):
+            self.relax(rebuild=(it % every == 0))
 
         # fibroblasts deposit matrix, then immune cells move through it
         self.fibroblasts.step(dt)

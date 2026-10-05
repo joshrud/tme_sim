@@ -18,6 +18,10 @@ from scipy.spatial import cKDTree
 from . import params as P
 
 NAIVE, ANERGIC, EFFECTOR, EXITED = 0, 1, 3, 4
+
+# Nearest tumour cells considered per T cell. At close packing a cell has ~12 touching
+# neighbours, so this covers every cell it can physically overlap or contact.
+K_NEIGHBOURS = 12
 STATE_NAMES = {NAIVE: "naive", ANERGIC: "anergic", EFFECTOR: "effector", EXITED: "exited"}
 TC = P.TCELL
 
@@ -103,19 +107,24 @@ class TCells:
 
             # dense matrix is a barrier: T cells are kept out of it entirely
             blocked = ~w.fibroblasts.passable(prop)
-            for k in np.where(free)[0]:
-                if blocked[k]:
-                    self.dir[k] = rng.normal(size=3)
-                    self.dir[k] /= np.linalg.norm(self.dir[k])
-                    continue
-                nb = tree.query_ball_point(prop[k], r_T[k] + rmax)
-                if nb:
-                    d = np.linalg.norm(w.pos[nb] - prop[k], axis=1)
-                    if np.any(d < TC["squeeze"].value * (r_T[k] + r_tumor[nb])):
-                        self.dir[k] = rng.normal(size=3)  # blocked: pick a new heading
-                        self.dir[k] /= np.linalg.norm(self.dir[k])
-                        continue
-                self.pos[k] = prop[k]
+            idx = np.where(free)[0]
+            if len(idx):
+                # Batched KD-tree queries: one C call for every T cell at once instead of a
+                # Python-level query per cell. K nearest tumour cells is enough because a T cell
+                # can only physically overlap a handful of them at close packing.
+                dist, near = tree.query(prop[idx], k=K_NEIGHBOURS, workers=-1)
+                dist = np.atleast_2d(dist)
+                near = np.atleast_2d(near)
+                valid = near < w.n
+                overlap = (dist < TC["squeeze"].value
+                           * (r_T[idx][:, None] + np.where(valid, r_tumor[np.minimum(near, w.n - 1)], 0.0)))
+                stuck = blocked[idx] | (valid & overlap).any(axis=1)
+                moved = idx[~stuck]
+                self.pos[moved] = prop[moved]
+                if stuck.any():     # blocked: pick a new heading
+                    b = idx[stuck]
+                    d = rng.normal(size=(len(b), 3))
+                    self.dir[b] = d / np.linalg.norm(d, axis=1)[:, None]
 
             # leaving the tissue
             out = free & (np.linalg.norm(self.pos - center, axis=1) > R_out)
@@ -123,26 +132,37 @@ class TCells:
             w.events += [(t, "exit", int(i), -1) for i in self.id[out]]
             free &= ~out
 
-            # contacts with live tumor cells
-            for k in np.where(free)[0]:
-                nb = tree.query_ball_point(self.pos[k], r_T[k] + rmax + 1.0)
-                live = [j for j in nb if w.state[j] == 0 and
-                        np.linalg.norm(w.pos[j] - self.pos[k]) < 1.1 * (r_T[k] + r_tumor[j])]
-                if not live or not self.cognate[k]:
-                    continue
-                j = live[rng.integers(len(live))]
-                if self.state[k] == NAIVE:
-                    self.stim_h[k] += dt_min / 60  # signal 1 from the tumour cell
-                    # signal 2 requires an antigen-presenting cell nearby (DC or B cell);
-                    # with one, the naive cell is primed instead of going anergic
-                    if w.immune.presenting_near(self.pos[k])[0]:
-                        self.state[k] = EFFECTOR
-                        w.events.append((t, "primed", int(self.id[k]), int(w.id[j])))
-                    elif not TC["tumor_costimulation"].value and self.stim_h[k] >= TC["anergy_signal1_h"].value:
-                        self.state[k] = ANERGIC
-                        w.events.append((t, "anergic", int(self.id[k]), int(w.id[j])))
-                elif self.state[k] == EFFECTOR:
-                    self._hit(k, j, t, rng)
+            # contacts with live tumour cells, also batched
+            idx = np.where(free & self.cognate)[0]
+            if len(idx):
+                dist, near = tree.query(self.pos[idx], k=K_NEIGHBOURS, workers=-1)
+                dist = np.atleast_2d(dist)
+                near = np.atleast_2d(near)
+                valid = near < w.n
+                safe = np.minimum(near, w.n - 1)
+                touching = (valid & (w.state[safe] == 0)
+                            & (dist < 1.1 * (r_T[idx][:, None] + r_tumor[safe])))
+                has = touching.any(axis=1)
+                if has.any():
+                    # one random touching neighbour per T cell, vectorised
+                    rnd = rng.random(touching.shape) * touching
+                    pick = safe[np.arange(len(idx)), rnd.argmax(axis=1)]
+                    hot = np.where(has)[0]
+                    naive_hot = hot[self.state[idx[hot]] == NAIVE]
+                    if len(naive_hot):
+                        apc = w.immune.presenting_near(self.pos[idx[naive_hot]])
+                        self.stim_h[idx[naive_hot]] += dt_min / 60
+                        for m, k in enumerate(naive_hot):
+                            kk, j = idx[k], pick[k]
+                            if apc[m]:
+                                self.state[kk] = EFFECTOR
+                                w.events.append((t, "primed", int(self.id[kk]), int(w.id[j])))
+                            elif (not TC["tumor_costimulation"].value
+                                  and self.stim_h[kk] >= TC["anergy_signal1_h"].value):
+                                self.state[kk] = ANERGIC
+                                w.events.append((t, "anergic", int(self.id[kk]), int(w.id[j])))
+                    for k in hot[self.state[idx[hot]] == EFFECTOR]:
+                        self._hit(idx[k], pick[k], t, rng)
             self._record(t)
         self._record(t0 + hours, force=False)
 
