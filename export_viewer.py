@@ -131,6 +131,11 @@ out += b"\0" * (-len(out) % 4)
 os.makedirs("viewer/data", exist_ok=True)
 with gzip.open(f"viewer/data/{NAME}.bin.gz", "wb") as fh:
     fh.write(out)
+import shutil
+src_organs = f"{RUN}/organs.json"
+if os.path.exists(src_organs):
+    shutil.copyfile(src_organs, f"viewer/data/{NAME}.organs.json")
+
 print(f"{len(frames)} frames, {len(tid)} T cells, {len(hits)} hits, {len(killed)} kills, "
       f"{len(out) / 1e6:.1f} MB raw -> "
       f"{os.path.getsize(f'viewer/data/{NAME}.bin.gz') / 1e6:.1f} MB gzipped -> viewer/data/{NAME}.bin.gz")

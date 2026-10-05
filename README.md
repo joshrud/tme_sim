@@ -187,8 +187,39 @@ python validate_immune.py             # composition, spatial rules, priming, sup
 healthy tissue is 1.14 mutations/division, tumors 4-100x that). Each mutation may hit a driver gene, drawn from
 indication-specific weights. Driver fitness effects are deliberately near-neutral (Williams et al. 2016).
 
-**Of the 119 model parameters, 61 are assumptions** - `out/param_table.md` lists every one with its evidence
+**Of the 151 model parameters, 76 are assumptions** - `out/param_table.md` lists every one with its evidence
 status and source. That ratio is the honest state of the model, and the assumption-tagged rows are the backlog.
+
+## Lymphoid organs (off-screen, patient age 60)
+Four compartments the tumor exchanges cells with, tracked in memory as **counts by developmental stage** and shown
+as a live side table in the viewer ([`docs/lymphoid_organs.md`](docs/lymphoid_organs.md)):
+
+| Organ | Stages tracked | Anchor |
+|---|---|---|
+| **Bone marrow** | HSC → progenitor → mitotic → post-mitotic → released | 6.60 d post-mitotic transit, 0.85×10⁹ neutrophils/kg/day (Dancey 1976) |
+| **Thymus** | DN → DP → SP thymocyte | **>95% TREC decline from 25 to 60** (Douek 1998) |
+| **Spleen** | resident lymphocytes | ~15% of body lymphocytes |
+| **Draining lymph node** | naive T → antigen-loaded DC → priming → expanding → effectors | 3-phase priming, ~20 h (Mempel 2004) |
+
+**The priming loop now runs off-screen, where it actually happens.** A DC picks up tumor antigen, takes ~18 h to
+reach the draining node, primes cognate naive T cells over 20 h, those expand for 48 h, and the effectors return
+through blood in under a step. Measured end to end: DC reaches node at 19.5 h, effectors leave at 87.5 h, and
+arrive at the tumor the same step.
+
+Three findings worth flagging:
+
+- **Anatomical distance is not rate-limiting.** Blood circulates in about a minute, so a 10 cm difference in nodal
+  basin distance changes DC transit by **0.03 h against an 18 h baseline**. PDAC's nodes are the closest of the
+  four (~2 cm) and it is still the least T-cell infiltrated — stromal exclusion dominates, not geometry.
+- **At 60 the thymus is nearly silent**, and that is fine, because the adult human naive T-cell pool is maintained
+  by **peripheral division, not thymic output** (den Braber 2012) — unlike in mice.
+- **Precursor frequency is indication-specific.** HeLa is an allogeneic cell line (~7% alloreactive precursors);
+  the four real indications are autologous, so they use the measured per-epitope frequency of ~1×10⁻⁵
+  (Alanio 2010). That is a 4-order-of-magnitude difference and it dominates response size.
+
+```bash
+python validate_organs.py
+```
 
 ## Parked ideas
 - **Two-agent system (body vs. tumor)**: revisit once immune/stromal cell types exist.

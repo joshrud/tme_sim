@@ -13,6 +13,7 @@ from scipy.spatial import cKDTree
 from . import params as P
 from .fibroblasts import FRACTION as FIBRO_FRACTION, Fibroblasts
 from .immune import ImmuneCells
+from .organs import LymphoidSystem
 from .indications import DEFAULT as DEFAULT_INDICATION, INDICATIONS, MutationModel
 from .tcells import TCells
 
@@ -66,6 +67,7 @@ class World:
         self.tcells = TCells(self)
         self.fibroblasts = Fibroblasts(self)
         self.immune = ImmuneCells(self)
+        self.organs = LymphoidSystem(self)
         o, g, l, m = P.OXYGEN, P.GLUCOSE, P.LACTATE, P.MITOGEN
         # oxygen in mmHg: amount/s -> mmHg*L/s via solubility
         self.fields = {
@@ -323,6 +325,15 @@ class World:
         self.fibroblasts.step(dt)
         self.immune.step(dt)
         self.tcells.step(dt)
+
+        # off-screen organs: DCs carry antigen out, primed effectors come back
+        self.organs.send_dcs(self.immune.dcs_leaving(dt))
+        self.organs.step(dt)
+        ready = self.organs.take_effectors(max_n=P.TCELL["effector_influx_cap"].value * dt)
+        if ready:
+            from .tcells import EFFECTOR
+            self.tcells.enter(ready, EFFECTOR, 1.0)
+            self.events.append((self.t, "effectors_arrive_tumor", int(ready), -1))
         gone = (self.state == APOPTOTIC) & (self.t + dt >= self.t_dead + P.TCELL["apoptotic_clearance"].value)
         if gone.any():
             self.t += dt  # log clearance at the end of the step
