@@ -133,6 +133,9 @@ TCELL = {
     "apoptosis_onset": P(2.0, "min", "measured", "caspase-dependent rounding within 2 min, Lopez 2013"),
     "apoptotic_clearance": P(6.0, "h", "assumption",
                              "apoptotic cell persists before removal; no phagocytes in the model yet"),
+    "effector_influx_cap": P(40.0, "cells/h", "assumption",
+                             "cap on primed effectors entering the tumour per hour, so a single "
+                             "priming burst does not arrive all at once"),
     "squeeze": P(0.8, "-", "assumption", "T cells may overlap tumor cells by 20% when passing between them"),
     "world_margin": P(200.0, "um", "assumption",
                       "T cells farther than this beyond the tumor edge leave the tissue (exit); naive T "
@@ -168,7 +171,9 @@ def table():
     from .fibroblasts import table as fibroblast_table
     from .immune import table as immune_table
     from .indications import table as indication_table
+    from .organs import table as organ_table
     rows += indication_table()
     rows += fibroblast_table()
     rows += immune_table()
+    rows += organ_table()
     return rows

@@ -62,6 +62,7 @@ async function loadData(url) {
     const nd = dv.getUint32(o, true); o += 4;
     tc.deaths = { n: nd, target: new Uint32Array(buf, o, nd), tk: new Float32Array(buf, o + 4 * nd, nd),
                   tc: new Float32Array(buf, o + 8 * nd, nd), killer: new Uint32Array(buf, o + 12 * nd, nd) };
+    o += 16 * nd;   // the deaths block must be stepped over before anything that follows
   }
   let fib = { n: 0 }, imm = { n: 0 };
   if (version >= 4) {
@@ -138,6 +139,11 @@ const css = (c) => `rgb(${c.map((v) => Math.round(v * 255)).join(",")})`;
 
 // ------------------------------------------------------------------ main
 const RUN = new URLSearchParams(location.search).get("run") || "frames";  // ?run=effector
+// Off-screen lymphoid organs: counts by developmental stage, updated with the timeline.
+let organs = null;
+try {
+  organs = await (await fetch(`data/${RUN}.organs.json`)).json();
+} catch (e) { organs = null; }
 const { frames, mitosis, parent, birth, tc, fib, imm } = await loadData(`data/${RUN}.bin.gz`);
 const lin = buildLineage(parent, birth);
 $("loading").remove();
@@ -766,8 +772,18 @@ $("record").onclick = () => {
 };
 
 // ------------------------------------------------------------------ loop
+function placeOrganPanel() {
+  // sit just below the cross-section panel, whose height depends on the pane width
+  const sec = $("section"), org = $("organs");
+  if (!org || org.hidden) return;
+  const top = sec.getBoundingClientRect().bottom + 12;
+  org.style.top = `${top}px`;
+  org.style.maxHeight = `${Math.max(innerHeight - top - 16, 120)}px`;
+}
+
 function resize() {
   renderer.setSize(innerWidth, innerHeight, false);
+  placeOrganPanel();
   const db = renderer.getDrawingBufferSize(new THREE.Vector2());
   smooth.setSize(db.x, db.y);
   camera.aspect = innerWidth / innerHeight;
@@ -781,6 +797,31 @@ window.tme = { cur, lin, parent, birth, camera, controls, ui, setTime, renderer,
   computeState, updateInstances, drawSection, tc, tcur, computeT, anims, triggerEvents, updateT, updateGranules,
   select: (id) => { ui.selected = id; ui.dirty = true; showSelection(); },
   refresh: () => { computeState(ui.t); computeT(ui.t); updateInstances(); drawSection(); updateCloneCount(); } };  // sync, for scripts
+
+function drawOrgans(t) {
+  if (!organs) return;
+  let k = 0;
+  while (k < organs.t.length - 1 && organs.t[k + 1] <= t) k++;
+  const rows = organs.rows[k];
+  const fmt = (n) => n >= 1e9 ? (n / 1e9).toFixed(1) + "B"
+    : n >= 1e6 ? (n / 1e6).toFixed(1) + "M"
+    : n >= 1e3 ? (n / 1e3).toFixed(1) + "k" : Math.round(n).toLocaleString();
+  let html = "", lastOrgan = null;
+  for (const [org, stage, n] of rows) {
+    if (org !== lastOrgan) { html += `<tr class="hdr"><td colspan="2">${org}</td></tr>`; lastOrgan = org; }
+    html += `<tr><td class="s">${stage}</td><td class="n">${fmt(n)}</td></tr>`;
+  }
+  $("organTable").innerHTML = html;
+}
+if (organs) {
+  $("organs").hidden = false;
+  requestAnimationFrame(placeOrganPanel);
+  $("organAge").textContent = `· age ${organs.age}`;
+  $("organMeta").innerHTML =
+    `Draining basin: ${organs.node_basin} (~${organs.node_distance_cm} cm)<br>` +
+    `DC transit to node: ${organs.dc_transit_h} h · cognate precursors ` +
+    `${organs.precursor_frequency.toExponential(0)} of repertoire`;
+}
 
 let last = performance.now();
 function loop(now) {
@@ -802,6 +843,7 @@ function loop(now) {
     updateInstances();
     drawSection();
     updateCloneCount();
+    drawOrgans(ui.t);
     let nM = 0, nVis = 0;
     for (let i = 0; i < cur.n; i++) { nM += cur.phase[i] === 2 && cur.r[i] > 0; nVis += cur.r[i] > 0; }
     $("tval").textContent = `${ui.t.toFixed(2)} h (day ${(ui.t / 24).toFixed(1)})`;

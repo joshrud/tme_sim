@@ -13,6 +13,7 @@ Output (--out, default out/):
 """
 import argparse
 import csv
+import json
 import os
 import time
 
@@ -22,6 +23,7 @@ from tme import params as P
 from tme.tcells import EFFECTOR, NAIVE
 from tme.fibroblasts import FRACTION as FIBRO_FRACTION
 from tme.indications import DEFAULT as DEFAULT_INDICATION, INDICATIONS
+from tme.organs import NODE_BASIN, NODE_DISTANCE_CM
 from tme.world import World
 
 ap = argparse.ArgumentParser()
@@ -52,7 +54,7 @@ if args.fibroblasts:
           f"({100 * FIBRO_FRACTION[w.indication.key]:.0f}% of tumor cells)")
 if args.immune:
     print(f"immune: {w.seed_immune()}")
-snaps, rows = [], []
+snaps, rows, organ_log = [], [], []
 t0 = time.time()
 step = 0
 
@@ -92,6 +94,7 @@ while not done():
         print(rows[-1], flush=True)
     if step % snap_steps == 0:
         snaps.append(w.snapshot())
+        organ_log.append((w.t, w.organs.table()))
 
 w.solve_fields()
 snaps.append(w.snapshot())
@@ -114,6 +117,16 @@ np.savez_compressed(f"{args.out}/fibroblasts.npz",
                     ecm_h=np.array([fb.ecm.h if fb.ecm is not None else 0.0]))
 np.savez_compressed(f"{args.out}/immune.npz", pos=w.immune.pos.astype(np.float32),
                     kind=w.immune.kind.astype(np.int8), id=w.immune.id)
+organ_log.append((w.t, w.organs.table()))
+with open(f"{args.out}/organs.json", "w") as fh:
+    json.dump({"age": w.organs.age,
+               "indication": w.indication.key,
+               "node_basin": NODE_BASIN.get(w.indication.key, ""),
+               "node_distance_cm": NODE_DISTANCE_CM.get(w.indication.key, 0),
+               "dc_transit_h": round(w.organs.dc_transit_time(), 2),
+               "precursor_frequency": w.organs.precursor_frequency,
+               "t": [t for t, _ in organ_log],
+               "rows": [[[o, st, float(n)] for o, st, n in tbl] for _, tbl in organ_log]}, fh)
 with open(f"{args.out}/indication.txt", "w") as fh:
     fh.write(f"{w.indication.key}\t{w.indication.name}\t{w.indication.line}\n"
              f"doubling_h\t{w.indication.doubling_h}\n"

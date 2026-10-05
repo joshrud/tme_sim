@@ -61,7 +61,10 @@ TYPES = {
     NEUTROPHIL: dict(
         radius=P(5.0, "um", "assumption", "granulocyte"),
         speed=P(12.0, "um/min", "assumption", "fast-migrating myeloid cell"),
-        lifespan=P(24.0, "h", "proxy", "short circulating lifespan; tumour neutrophils live longer"),
+        lifespan=P(5.4 * 24, "h", "measured",
+                   "human neutrophil circulatory lifespan 5.4 days by in vivo 2H2O labelling, "
+                   "Pillay et al. 2010 doi:10.1182/blood-2010-01-259028 - about 10x longer than "
+                   "the <1 day figure from ex vivo labelling that is often quoted"),
         rule="margin", suppress=0.3, presents=False),
 }
 
@@ -76,6 +79,11 @@ MONOCYTE = {
 
 SUPPRESSION_RADIUS = P(40.0, "um", "assumption",
                        "distance over which a Treg or TAM suppresses CD8 killing")
+
+DC_EGRESS = P(0.02, "1/h", "assumption",
+              "fraction of intratumoural DCs that pick up antigen and leave for the draining node "
+              "each hour; CCR7-dependent trafficking is established (Roberts et al. 2016) but the "
+              "rate is not measured")
 
 REPLENISH = P(0.5, "-", "assumption",
               "fraction of the shortfall from the target composition recruited per hour. Immune "
@@ -291,6 +299,20 @@ class ImmuneCells:
         tree = cKDTree(self.pos[apc])
         return np.array([len(nb) > 0 for nb in tree.query_ball_point(pos, radius)])
 
+    def dcs_leaving(self, hours):
+        """Antigen-loaded DCs that depart for the draining lymph node this step."""
+        n_dc = int((self.kind == DC).sum())
+        if not n_dc:
+            return 0
+        k = self.w.rng.poisson(n_dc * DC_EGRESS.value * hours)
+        k = min(int(k), n_dc)
+        if k:  # they physically leave the tumour
+            idx = np.where(self.kind == DC)[0][:k]
+            keep = np.ones(self.n, bool)
+            keep[idx] = False
+            self._keep(keep)
+        return k
+
     def counts(self):
         return {NAMES[k]: int((self.kind == k).sum()) for k in TYPES}
 
@@ -311,6 +333,8 @@ def table():
                      "local reduction of CD8 killing; phenomenological"))
     for k, p in MONOCYTE.items():
         rows.append(("immune", f"monocyte.{k}", p.value, p.unit, p.status, p.source))
+    rows.append(("immune", "dc_egress", DC_EGRESS.value, DC_EGRESS.unit,
+                 DC_EGRESS.status, DC_EGRESS.source))
     rows.append(("immune", "suppression_radius", SUPPRESSION_RADIUS.value, "um",
                  SUPPRESSION_RADIUS.status, SUPPRESSION_RADIUS.source))
     for ind, c in COMPOSITION.items():

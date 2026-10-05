@@ -16,6 +16,13 @@
     border-radius: 8px; padding: 10px 12px; backdrop-filter: blur(4px); }
   #controls { top: 12px; left: 12px; width: 260px; }
   #section { top: 12px; right: 12px; width: 300px; }
+  #organs { right: 12px; top: 420px; width: 300px; overflow-y: auto; }
+  #organs table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  #organs td { padding: 1px 0; }
+  #organs td.n { text-align: right; font-variant-numeric: tabular-nums; color: var(--text); }
+  #organs td.s { color: var(--muted); padding-left: 8px; }
+  #organs tr.hdr td { color: var(--accent); font-weight: 600; padding-top: 6px; }
+  #organMeta { font-size: 11px; margin-bottom: 4px; }
   h1 { font-size: 13px; margin: 0 0 8px; font-weight: 600; }
   label { display: block; color: var(--muted); margin-top: 8px; }
   label span { color: var(--text); float: right; font-variant-numeric: tabular-nums; }
@@ -89,6 +96,12 @@
   <div id="status"></div>
   <h1 style="margin-top:12px">Lineage</h1>
   <div id="lineage"></div>
+</div>
+
+<div id="organs" class="panel" hidden>
+  <h1>Lymphoid organs <span id="organAge" class="muted"></span></h1>
+  <div id="organMeta" class="muted"></div>
+  <table id="organTable"></table>
 </div>
 
 <div id="section" class="panel">

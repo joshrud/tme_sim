@@ -1,0 +1,5 @@
+LUAD	Lung adenocarcinoma	A549
+doubling_h	27.0
+mut_per_division	45.60
+truncal	KRAS,STK11
+sources	TCGA LUAD 2014 PMID 25079552; Cellosaurus A549

@@ -44,6 +44,7 @@
 | tcell | perforin_pore | 0.5 | min | **measured** | target permeabilized within ~30 s, Lopez et al. 2013 Blood, doi:10.1182/blood-2012-07-446146 |
 | tcell | apoptosis_onset | 2.0 | min | **measured** | caspase-dependent rounding within 2 min, Lopez 2013 |
 | tcell | apoptotic_clearance | 6.0 | h | **assumption** | apoptotic cell persists before removal; no phagocytes in the model yet |
+| tcell | effector_influx_cap | 40.0 | cells/h | **assumption** | cap on primed effectors entering the tumour per hour, so a single priming burst does not arrive all at once |
 | tcell | squeeze | 0.8 | - | **assumption** | T cells may overlap tumor cells by 20% when passing between them |
 | tcell | world_margin | 200.0 | um | **assumption** | T cells farther than this beyond the tumor edge leave the tissue (exit); naive T cells recirculate rather than residing in tissue |
 | tcell | substep | 1.0 | min | **numerical** | T-cell motility substep |
@@ -108,14 +109,45 @@
 | immune | Treg.suppress | 0.8 | - | **assumption** | local reduction of CD8 killing; phenomenological |
 | immune | neutrophil.radius | 5.0 | um | **assumption** | granulocyte |
 | immune | neutrophil.speed | 12.0 | um/min | **assumption** | fast-migrating myeloid cell |
-| immune | neutrophil.lifespan | 24.0 | h | **proxy** | short circulating lifespan; tumour neutrophils live longer |
+| immune | neutrophil.lifespan | 129.60000000000002 | h | **measured** | human neutrophil circulatory lifespan 5.4 days by in vivo 2H2O labelling, Pillay et al. 2010 doi:10.1182/blood-2010-01-259028 - about 10x longer than the <1 day figure from ex vivo labelling that is often quoted |
 | immune | neutrophil.suppress | 0.3 | - | **assumption** | local reduction of CD8 killing; phenomenological |
 | immune | monocyte.marrow_delay | 38.400000000000006 | h | **measured** | postmitotic interval before classical monocytes leave marrow, Patel et al. 2017 doi:10.1084/jem.20170355 |
 | immune | monocyte.circulating | 24.0 | h | **measured** | classical monocytes circulate ~1 day, Patel et al. 2017 |
 | immune | monocyte.to_tam | 24.0 | h | **assumption** | time in tissue before becoming a TAM |
+| immune | dc_egress | 0.02 | 1/h | **assumption** | fraction of intratumoural DCs that pick up antigen and leave for the draining node each hour; CCR7-dependent trafficking is established (Roberts et al. 2016) but the rate is not measured |
 | immune | suppression_radius | 40.0 | um | **assumption** | distance over which a Treg or TAM suppresses CD8 killing |
 | immune | PDAC.leukocyte_fraction | 0.12 | - | **assumption** | immune cells per tumour cell; phenotype 'excluded'; reproduces published ordering, not a measurement |
 | immune | LUAD.leukocyte_fraction | 0.3 | - | **assumption** | immune cells per tumour cell; phenotype 'inflamed'; reproduces published ordering, not a measurement |
 | immune | OV.leukocyte_fraction | 0.2 | - | **assumption** | immune cells per tumour cell; phenotype 'moderate'; reproduces published ordering, not a measurement |
 | immune | BRCA.leukocyte_fraction | 0.22 | - | **assumption** | immune cells per tumour cell; phenotype 'variable'; reproduces published ordering, not a measurement |
 | immune | CESC.leukocyte_fraction | 0.2 | - | **assumption** | immune cells per tumour cell; phenotype 'moderate'; reproduces published ordering, not a measurement |
+| organs | patient_age | 60.0 | years | **assumption** | patient age; set by the user for this model |
+| organs | marrow.mitotic_pool | 2110000000.0 | cells/kg | **measured** | promyelocytes + myelocytes, Dancey et al. 1976 doi:10.1172/JCI108517 |
+| organs | marrow.postmitotic_pool | 5590000000.0 | cells/kg | **measured** | metamyelocytes, bands, segs, Dancey et al. 1976 |
+| organs | marrow.postmitotic_transit | 158.39999999999998 | h | **measured** | 6.60 +/- 0.03 days, Dancey et al. 1976 |
+| organs | marrow.neutrophil_production | 850000000.0 | cells/kg/day | **measured** | Dancey et al. 1976 |
+| organs | marrow.monocyte_postmitotic | 38.400000000000006 | h | **measured** | classical monocytes leave marrow after 1.6 d, Patel et al. 2017 |
+| organs | marrow.hsc_fraction | 0.0001 | - | **assumption** | HSCs as a fraction of marrow cells |
+| organs | thymus.export_young | 16000000.0 | cells/day | **proxy** | thymic export at 20-25 y, from the T-cell ageing modelling literature |
+| organs | thymus.trec_decline_25_60 | 0.95 | - | **measured** | TRECs fall >95% between 25 and 60 y, Douek 1998 / Palmer 2013 |
+| organs | thymus.involution_per_year | 0.03 | 1/year | **measured** | ~3%/year to middle age, ~1%/year after, Palmer 2013 |
+| organs | thymus.peripheral_maintenance | True | bool | **measured** | adult human naive T cells are maintained by peripheral division, not thymic output, den Braber et al. 2012 |
+| organs | priming.dc_transit_base | 18.0 | h | **proxy** | DC migration to the draining node, CCR7-dependent; Martin-Fontecha 2003, Roberts et al. 2016. Dominated by interstitial crawling, not path length |
+| organs | priming.lymph_velocity | 1.0 | mm/s | **proxy** | lymphatic flow; the distance term is minor |
+| organs | priming.priming_h | 20.0 | h | **measured** | ~8 h serial DC contacts then ~12 h stable conjugates, Mempel et al. 2004 doi:10.1038/nature02238 |
+| organs | priming.expansion_h | 48.0 | h | **assumption** | clonal expansion before exit; proliferation starts day 2 |
+| organs | priming.expansion_factor | 100.0 | - | **assumption** | effectors produced per primed naive T cell over ~48 h of division; roughly 6-7 divisions |
+| organs | priming.dc_capacity | 10.0 | cells | **assumption** | cognate naive T cells one arriving DC can prime |
+| organs | priming.precursor_autologous | 1e-05 | - | **measured** | human naive CD8 precursor frequency per epitope ranges 0.6e-6 to 1.3e-4 across 6 epitopes incl. MART-1 and NY-ESO-1 and is conserved between people; Alanio et al. 2010 Blood doi:10.1182/blood-2009-10-251124. Midpoint used for an autologous tumour neoantigen |
+| organs | priming.precursor_allogeneic | 0.07 | - | **proxy** | HeLa is allogeneic to any patient, so its precursor frequency is the alloreactive one (~7%, Suchin et al. 2001), ~4 orders of magnitude above a neoantigen. CESC/HeLa only |
+| organs | priming.blood_circuit | 0.016666666666666666 | h | **measured** | whole blood volume circulates in about a minute |
+| organs | share.lymph_node | 0.4 | - | **assumption** | from distribution surveys, Westermann & Pabst 1992 |
+| organs | share.spleen | 0.15 | - | **assumption** | from distribution surveys, Westermann & Pabst 1992 |
+| organs | share.blood | 0.02 | - | **measured** | blood holds ~2% of body lymphocytes, Blum & Pabst 2007 |
+| organs | share.marrow | 0.1 | - | **assumption** | remaining compartment estimate |
+| organs | thymic_export_at_age | 800000 | cells/day | **derived** | young-adult rate scaled by the measured TREC decline (>95% from 25 to 60) |
+| organs | node_distance.PDAC | 2.0 | cm | **assumption** | peripancreatic / celiac basin; distance contributes <1 h vs an 18 h baseline transit |
+| organs | node_distance.LUAD | 5.0 | cm | **assumption** | hilar / mediastinal basin; distance contributes <1 h vs an 18 h baseline transit |
+| organs | node_distance.CESC | 5.0 | cm | **assumption** | parametrial / pelvic basin; distance contributes <1 h vs an 18 h baseline transit |
+| organs | node_distance.OV | 8.0 | cm | **assumption** | pelvic / para-aortic basin; distance contributes <1 h vs an 18 h baseline transit |
+| organs | node_distance.BRCA | 12.0 | cm | **assumption** | axillary basin; distance contributes <1 h vs an 18 h baseline transit |
