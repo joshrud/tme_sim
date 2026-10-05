@@ -49,20 +49,23 @@ print(f"\n3. Does dense stroma exclude T cells? PDAC, {DAYS} d of matrix build-u
 print("   (matrix acts as a barrier, not just drag - see docs/fibroblasts.md)")
 res = {}
 for label, with_fib in [("with fibroblasts", True), ("no fibroblasts (control)", False)]:
-    w = World(seed=9, indication="PDAC")
-    w.seed_ball(2000)
-    if with_fib:
-        w.seed_fibroblasts()
-    for _ in range(DAYS * 24):      # matrix build-up, tumor held fixed
-        w.fibroblasts.step(1.0)
-    w.tcells.enter(150, EFFECTOR, 1.0)
-    for _ in range(96):             # 24 h of killing
-        w.step()
-    ev = [x[1] for x in w.events]
-    res[label] = (ev.count("hit"), ev.count("killed"))
-    e = w.fibroblasts.ecm_at(w.tcells.pos)
-    print(f"   {label:26s} ECM at T cells {np.median(e):.2f}  "
-          f"hits {ev.count('hit'):5d}  kills {ev.count('killed'):4d}")
+    hits, kills = [], []
+    for seed in (9, 17, 23):          # the kill effect is small, so average over seeds
+        w = World(seed=seed, indication="PDAC")
+        w.seed_ball(2000)
+        w.immune.recruiting = False   # isolate the matrix effect from immune recruitment
+        if with_fib:
+            w.seed_fibroblasts()
+        for _ in range(DAYS * 24):    # matrix build-up, tumour held fixed
+            w.fibroblasts.step(1.0)
+        w.tcells.enter(150, EFFECTOR, 1.0)
+        for _ in range(96):           # 24 h of killing
+            w.step()
+        ev = [x[1] for x in w.events]
+        hits.append(ev.count("hit"))
+        kills.append(ev.count("killed"))
+    res[label] = (np.mean(hits), np.mean(kills))
+    print(f"   {label:26s} hits {np.mean(hits):6.0f}  kills {np.mean(kills):5.1f} +/- {np.std(kills):.1f}")
 h0, k0 = res["no fibroblasts (control)"]
 h1, k1 = res["with fibroblasts"]
-print(f"   -> stroma reduces contacts by {100 * (1 - h1 / h0):.0f}% and kills by {100 * (1 - k1 / k0):.0f}%")
+print(f"   -> stroma reduces contacts by {100 * (1 - h1 / h0):.0f}% and kills by {100 * (1 - k1 / k0):.0f}% (3 seeds)")

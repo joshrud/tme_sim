@@ -53,6 +53,10 @@
 | numerics | packing | 0.86 | - | **derived** | rest distance = 0.86*(r_i+r_j) -> space-filling tissue |
 | numerics | contact_tol | 1.15 | - | **numerical** | edge if distance < tol * rest distance |
 | numerics | mech_iters | 10 | - | **numerical** | overlap-relaxation iterations per step |
+| numerics | field_rtol | 1e-06 | - | **numerical** | CG relative tolerance; on a ~100 mmHg field this is ~1e-4 mmHg, far below any biologically meaningful difference |
+| numerics | picard_tol | 0.0001 | - | **numerical** | stop the Michaelis-Menten fixed-point iteration once the field stops changing |
+| numerics | picard_max | 6 | - | **numerical** | cap on fixed-point iterations per field |
+| numerics | graph_every | 5 | - | **numerical** | rebuild the contact graph every N relaxation passes; in between, edge distances are recomputed but the neighbour list is reused |
 | numerics | repulsion | 0.25 | - | **numerical** | fraction of overlap removed per iteration |
 | numerics | adhesion | 0.1 | - | **numerical** | fraction of gap closed per iteration |
 | indication | PDAC.doubling_h | 29.0 | h | **measured** | median of Cellosaurus-reported values for PANC-1 (range 15-52 h) |

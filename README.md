@@ -221,6 +221,37 @@ Three findings worth flagging:
 python validate_organs.py
 ```
 
+## Performance
+A full step (fields, mechanics, tumor, fibroblasts, immune, T cells, organs):
+
+| Tumor cells | s/step | 7-day run |
+|---|---|---|
+| 12k | 0.14 | 2 min |
+| 30k | 0.41 | 5 min |
+| 60k | 1.01 | 11 min |
+| 100k | 2.06 | 23 min |
+
+**Does C/C++ help?** Mostly it is already there. KD-tree queries, sparse solves and BLAS inside SciPy/NumPy are
+compiled C and Fortran, so rewriting them would not help. The wins came from **calling that C properly** rather
+than from new C:
+
+| Change | Effect |
+|---|---|
+| Batch KD-tree queries (one C call for all T cells, not one per cell per substep) | T-cell step **3.2× faster** |
+| Reuse the contact graph across relaxation passes instead of rebuilding it 10×/step | packing unchanged |
+| Cache immune KD-trees (one was rebuilt on *every* CTL hit) | removed a step-dominating cost |
+| Looser CG tolerance (1e-6 ≈ 1e-4 mmHg) + early exit from the fixed-point loop | field solve **1.4× faster**, values identical |
+| `numba` kernel for the per-edge force scatter-add in `relax` | that kernel **38× faster** |
+
+Net: **2.3× faster at 60k cells** (1.95 → 0.84 s/step), with packing, field values and diffusion accuracy
+unchanged. Only one genuine compiled kernel was needed (`tme/kernels.py`), because the force accumulation is the
+one hot loop with no library equivalent. `numba` JIT-compiles it via LLVM at first call, so there is no build
+step; if numba is missing the model still runs.
+
+```bash
+python profile_sim.py 60000 4      # per-component timings and a cProfile breakdown
+```
+
 ## Parked ideas
 - **Two-agent system (body vs. tumor)**: revisit once immune/stromal cell types exist.
 - **Resumable, compressed states**: an entity–component format with per-component precision, plus keyframes and deltas.

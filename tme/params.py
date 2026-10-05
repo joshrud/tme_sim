@@ -155,6 +155,15 @@ NUMERICS = {
     "packing": P(0.86, "-", "derived", "rest distance = 0.86*(r_i+r_j) -> space-filling tissue"),
     "contact_tol": P(1.15, "-", "numerical", "edge if distance < tol * rest distance"),
     "mech_iters": P(10, "-", "numerical", "overlap-relaxation iterations per step"),
+    "field_rtol": P(1e-6, "-", "numerical",
+                    "CG relative tolerance; on a ~100 mmHg field this is ~1e-4 mmHg, far below "
+                    "any biologically meaningful difference"),
+    "picard_tol": P(1e-4, "-", "numerical",
+                    "stop the Michaelis-Menten fixed-point iteration once the field stops changing"),
+    "picard_max": P(6, "-", "numerical", "cap on fixed-point iterations per field"),
+    "graph_every": P(5, "-", "numerical",
+                     "rebuild the contact graph every N relaxation passes; in between, edge "
+                     "distances are recomputed but the neighbour list is reused"),
     "repulsion": P(0.25, "-", "numerical", "fraction of overlap removed per iteration"),
     "adhesion": P(0.10, "-", "numerical", "fraction of gap closed per iteration"),
 }
