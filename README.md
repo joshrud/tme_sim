@@ -160,6 +160,36 @@ python -m http.server 8765 --directory viewer    # then open http://localhost:87
   The plane is shown in the 3D view, and each cell is drawn as its true circle of intersection.
 - **Record video**: plays from the start and saves the 3D view, the inset and a time label as WebM (MP4 on Safari).
 
+## Indications, fibroblasts and immune cells
+Four tumor types beyond the HeLa baseline, each with a reference cell line, doubling time, driver set and
+per-division mutation rate ([`docs/indications.md`](docs/indications.md)); fibroblasts that deposit ECM
+([`docs/fibroblasts.md`](docs/fibroblasts.md)); and a procedurally generated immune compartment
+([`docs/immune_cells.md`](docs/immune_cells.md)).
+
+```bash
+python run_spheroid.py --indication PDAC --fibroblasts --immune 400 --out out/pdac
+python export_viewer.py out/pdac      # then open http://localhost:8765/?run=pdac
+python validate_mutations.py          # mutation model vs Werner 2020
+python validate_ecm.py                # ECM storage, calibration, T-cell exclusion
+python validate_immune.py             # composition, spatial rules, priming, suppression
+```
+
+| | PDAC | LUAD | OV (HGSOC) | BRCA |
+|---|---|---|---|---|
+| Reference line | PANC-1 | A549 | Kuramochi | MCF-7 |
+| Doubling time | 29 h | 27 h | 46 h | 35 h |
+| Mutations/division | ~11 | ~46 | ~17 | ~9 |
+| Immune phenotype | excluded | inflamed | moderate | variable |
+| CD8 per 100 tumor cells | 1.0 | 7.5 | 3.0 | 4.0 |
+| ECM at tumor edge (7 d) | 0.72 | 0.14 | 0.28 | 0.28 |
+
+**Mutations are acquired at division**, as a Poisson draw with rate `1.14 x tumor_factor` (Werner et al. 2020:
+healthy tissue is 1.14 mutations/division, tumors 4-100x that). Each mutation may hit a driver gene, drawn from
+indication-specific weights. Driver fitness effects are deliberately near-neutral (Williams et al. 2016).
+
+**Of the 119 model parameters, 61 are assumptions** - `out/param_table.md` lists every one with its evidence
+status and source. That ratio is the honest state of the model, and the assumption-tagged rows are the backlog.
+
 ## Parked ideas
 - **Two-agent system (body vs. tumor)**: revisit once immune/stromal cell types exist.
 - **Resumable, compressed states**: an entity–component format with per-component precision, plus keyframes and deltas.

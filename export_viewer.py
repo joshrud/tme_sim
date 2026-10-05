@@ -4,7 +4,7 @@
   python export_viewer.py out/effector    # -> viewer/data/effector.bin.gz, open with ?run=effector
 
 Layout (little-endian), header, one block per frame (each padded to 4 bytes), lineage:
-  header: b"TME4", u32 version (=3), u32 n_frames,
+  header: b"TME4", u32 version (=4), u32 n_frames,
           f32 mitosis stage durations (h): NEBD->metaphase, metaphase->anaphase,
               anaphase->cytokinesis (a division event = end of cytokinesis)
   frame:  f32 t_hours, u32 n,
@@ -21,6 +21,9 @@ Layout (little-endian), header, one block per frame (each padded to 4 bytes), li
   hits:    u32 n_hits; f32 t[], u32 tcell_index[], u32 target_id[]
   deaths:  u32 n_dead; u32 target_id[], f32 t_killed[], f32 t_cleared[] (NaN = not cleared),
            u32 killer_index[]
+  stroma:  u32 n_fib;  i16 fib_pos[3n], u8 fib_state[n], pad
+           u32 n_imm;  i16 imm_pos[3n], u8 imm_kind[n], pad
+           (final-frame snapshot; these populations are not yet tracked over time in the viewer)
 """
 import sys
 import gzip
@@ -40,7 +43,7 @@ last = frames[-1]
 center = z[f"pos_{last:03d}"].mean(0)
 
 M = P.MITOSIS
-out = bytearray(b"TME4" + struct.pack("<II", 3, len(frames)))
+out = bytearray(b"TME4" + struct.pack("<II", 4, len(frames)))
 out += struct.pack("<3f", M["nebd_to_metaphase"].value, M["metaphase_to_anaphase"].value,
                    M["anaphase_to_cytokinesis"].value)
 for f in frames:
@@ -107,6 +110,23 @@ out += struct.pack("<I", len(killed)) + killed["cell_id"].astype(np.uint32).toby
 out += killed["t_h"].astype(np.float32).tobytes()
 out += np.array([cleared.get(int(i), np.nan) for i in killed["cell_id"]], np.float32).tobytes()
 out += np.array([tindex[int(i)] for i in killed["parent_id"]], np.uint32).tobytes()
+
+# stroma and immune compartment (final-frame snapshot)
+def _block(path, pos_key, lab_key):
+    try:
+        z2 = np.load(path)
+        p_, l_ = z2[pos_key], z2[lab_key]
+    except (FileNotFoundError, KeyError):
+        p_, l_ = np.zeros((0, 3)), np.zeros(0)
+    out_ = struct.pack("<I", len(p_))
+    out_ += np.round((np.atleast_2d(p_).reshape(-1, 3) - center) * 10).astype(np.int16).tobytes()
+    out_ += np.asarray(l_, np.uint8).tobytes()
+    return out_
+
+out += _block(f"{RUN}/fibroblasts.npz", "pos", "state")
+out += b"\0" * (-len(out) % 4)
+out += _block(f"{RUN}/immune.npz", "pos", "kind")
+out += b"\0" * (-len(out) % 4)
 
 os.makedirs("viewer/data", exist_ok=True)
 with gzip.open(f"viewer/data/{NAME}.bin.gz", "wb") as fh:

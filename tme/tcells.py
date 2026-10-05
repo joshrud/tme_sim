@@ -132,8 +132,13 @@ class TCells:
                     continue
                 j = live[rng.integers(len(live))]
                 if self.state[k] == NAIVE:
-                    self.stim_h[k] += dt_min / 60  # signal 1 only
-                    if not TC["tumor_costimulation"].value and self.stim_h[k] >= TC["anergy_signal1_h"].value:
+                    self.stim_h[k] += dt_min / 60  # signal 1 from the tumour cell
+                    # signal 2 requires an antigen-presenting cell nearby (DC or B cell);
+                    # with one, the naive cell is primed instead of going anergic
+                    if w.immune.presenting_near(self.pos[k])[0]:
+                        self.state[k] = EFFECTOR
+                        w.events.append((t, "primed", int(self.id[k]), int(w.id[j])))
+                    elif not TC["tumor_costimulation"].value and self.stim_h[k] >= TC["anergy_signal1_h"].value:
                         self.state[k] = ANERGIC
                         w.events.append((t, "anergic", int(self.id[k]), int(w.id[j])))
                 elif self.state[k] == EFFECTOR:
@@ -147,7 +152,8 @@ class TCells:
         dur = TC["contact_median"].value * np.exp(rng.normal(0, 0.5))  # lognormal, median 15 min
         self.target[k] = w.id[j]
         self.contact_end[k] = t + dur / 60
-        w.damage[j] += 1
+        # Tregs and TAMs nearby suppress the hit (phenomenological; see immune.py)
+        w.damage[j] += float(w.immune.suppression_at(self.pos[k])[0])
         w.events.append((t, "hit", int(self.id[k]), int(w.id[j])))
         if w.damage[j] >= TC["hits_to_kill"].value or rng.random() < TC["single_hit_lethal"].value:
             w.state[j] = w.APOPTOTIC

@@ -12,6 +12,13 @@ async function loadData(url) {
   if (new TextDecoder().decode(new Uint8Array(buf, 0, 4)) !== "TME4") throw new Error("bad file");
   const version = dv.getUint32(4, true);
   if (version < 2) throw new Error("re-run export_viewer.py");
+  const readBlock = (o) => {  // u32 n, i16 pos[3n], u8 label[n], pad
+    const n = dv.getUint32(o, true); o += 4;
+    const pos = new Int16Array(buf, o, 3 * n); o += 6 * n;
+    const lab = new Uint8Array(buf, o, n); o += n;
+    o += (4 - (o % 4)) % 4;
+    return [{ n, pos, lab }, o];
+  };
   const nFrames = dv.getUint32(8, true);
   const mitosis = { nebd: dv.getFloat32(12, true), meta: dv.getFloat32(16, true), ana: dv.getFloat32(20, true) };
   let o = 24;
@@ -56,7 +63,12 @@ async function loadData(url) {
     tc.deaths = { n: nd, target: new Uint32Array(buf, o, nd), tk: new Float32Array(buf, o + 4 * nd, nd),
                   tc: new Float32Array(buf, o + 8 * nd, nd), killer: new Uint32Array(buf, o + 12 * nd, nd) };
   }
-  return { frames, mitosis, parent, birth, tc };
+  let fib = { n: 0 }, imm = { n: 0 };
+  if (version >= 4) {
+    [fib, o] = readBlock(o);
+    [imm, o] = readBlock(o);
+  }
+  return { frames, mitosis, parent, birth, tc, fib, imm };
 }
 
 // index into frame a for every cell of frame b (-1 = born since a); ids are sorted
@@ -126,7 +138,7 @@ const css = (c) => `rgb(${c.map((v) => Math.round(v * 255)).join(",")})`;
 
 // ------------------------------------------------------------------ main
 const RUN = new URLSearchParams(location.search).get("run") || "frames";  // ?run=effector
-const { frames, mitosis, parent, birth, tc } = await loadData(`data/${RUN}.bin.gz`);
+const { frames, mitosis, parent, birth, tc, fib, imm } = await loadData(`data/${RUN}.bin.gz`);
 const lin = buildLineage(parent, birth);
 $("loading").remove();
 const M_TOTAL = mitosis.nebd + mitosis.meta + mitosis.ana;  // yellow window before cytokinesis
@@ -268,6 +280,14 @@ function drawLegend() {
       ${[0, 0.25, 0.5, 0.75, 1].map((x) => css(viridis(x))).join(",")})"></i> ${O2_MAX} mmHg</span>`;
   } else {
     l.innerHTML = `<span>One color per founding (seeded) cell. Click a cell to trace its clone.</span>`;
+  }
+  if (imm.n || fib.n) {
+    const seen = new Set([...imm.lab]);
+    const parts = IMMUNE_NAMES.map((nm, k) => seen.has(k)
+      ? `<span><i style="background:${IMMUNE_COLORS[k]}"></i>${nm}</span>` : "").join("");
+    const fibParts = fib.n ? FIBRO_NAMES.map((nm, k) =>
+      `<span><i style="background:${FIBRO_COLORS[k]}"></i>${nm}</span>`).join("") : "";
+    l.innerHTML += `<span style="flex-basis:100%;margin-top:6px"></span>${fibParts}${parts}`;
   }
 }
 
@@ -489,6 +509,39 @@ function updateMarker() {  // follows the selected tumor cell or T cell
   }
 }
 
+// ------------------------------------------------------------------ stroma + immune cells
+// Colours match tme/immune.py; kept distinct from tumour phase colours and white T cells.
+const IMMUNE_COLORS = ["#8a8f3a", "#e08a2e", "#9b6bd6", "#2bb8c4", "#dfe3a8", "#f2e9a0"];
+const IMMUNE_NAMES = ["macrophage", "dendritic", "NK", "B cell", "Treg", "neutrophil"];
+const IMMUNE_RADIUS = [8, 7, 5, 5, 4, 5];
+const FIBRO_COLORS = ["#c58fd0", "#7a5c86"];   // myCAF (near tumour), iCAF (distal)
+const FIBRO_NAMES = ["myCAF", "iCAF"];
+
+function staticPopulation(block, colors, radii, group) {
+  if (!block.n) return null;
+  const geo = new THREE.IcosahedronGeometry(1, 1);
+  const mat = new THREE.MeshLambertMaterial({ transparent: true, opacity: 1 });
+  const mesh = new THREE.InstancedMesh(geo, mat, block.n);
+  mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(3 * block.n), 3);
+  mesh.frustumCulled = false;
+  const d = new THREE.Object3D(), col = new THREE.Color();
+  for (let i = 0; i < block.n; i++) {
+    const k = block.lab[i];
+    d.position.set(block.pos[3 * i] / 10, block.pos[3 * i + 1] / 10, block.pos[3 * i + 2] / 10);
+    d.scale.setScalar(typeof radii === "number" ? radii : radii[k] || 5);
+    d.updateMatrix();
+    mesh.setMatrixAt(i, d.matrix);
+    col.set(colors[k] || "#888888");
+    mesh.instanceColor.setXYZ(i, col.r, col.g, col.b);
+  }
+  mesh.instanceMatrix.needsUpdate = true;
+  mesh.instanceColor.needsUpdate = true;
+  scene.add(mesh);
+  return mesh;
+}
+const fibMesh = staticPopulation(fib, FIBRO_COLORS, 7.5);
+const immMesh = staticPopulation(imm, IMMUNE_COLORS, IMMUNE_RADIUS);
+
 // ------------------------------------------------------------------ cross-section
 const xs = $("xs"), xctx = xs.getContext("2d");
 const AXES = { 0: ["y", "z", "x"], 1: ["x", "z", "y"], 2: ["x", "y", "z"] };  // [u, v, normal]
@@ -658,6 +711,10 @@ $("opacity").oninput = (e) => {
 $("style").onchange = (e) => { ui.style = e.target.value; $("smoothRow").hidden = ui.style !== "smooth"; };
 $("smoothing").oninput = (e) => { ui.smoothing = +e.target.value; $("smval").textContent = `${ui.smoothing} µm`; };
 $("wobble").onchange = (e) => { cellUniforms.uWobble.value = e.target.checked ? 0.035 : 0; };
+$("showStroma").onchange = (e) => {
+  if (fibMesh) fibMesh.visible = e.target.checked;
+  if (immMesh) immMesh.visible = e.target.checked;
+};
 $("color").onchange = (e) => { ui.color = e.target.value; drawLegend(); ui.dirty = true; };
 $("slice").oninput = (e) => { ui.slice = +e.target.value; $("pval").textContent = `${ui.slice} µm`; placePlane(); ui.dirty = true; };
 for (const b of document.querySelectorAll("#plane button")) {
