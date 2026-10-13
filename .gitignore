@@ -5,3 +5,7 @@ out/**/events.csv
 *.log
 .DS_Store
 viewer/data/
+out/frames/
+out/fixed/
+out/half/
+out/*.gif
